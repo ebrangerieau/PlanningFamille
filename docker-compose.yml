@@ -5,6 +5,12 @@ services:
     restart: unless-stopped
     ports:
       - "3051:3051"
+    volumes:
+      # Persistance des données entre redémarrages du conteneur
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3051
 
     # ──────────────────────────────────────────────────────────────────────────
     # Utilisation avec Traefik (reverse-proxy)
