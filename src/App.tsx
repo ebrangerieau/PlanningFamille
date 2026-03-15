@@ -5,7 +5,9 @@ type Member = { id: string; name: string; initial: string; colorKey: 'blue' | 'p
 type Chore  = { id: string; name: string; icon: string; iconColor: string };
 type Day    = { id: string; short: string };
 
-const MEMBERS: Member[] = [
+const COLOR_KEYS: Array<Member['colorKey']> = ['blue', 'purple', 'pink', 'orange'];
+
+const DEFAULT_MEMBERS: Member[] = [
   { id: 'tom',    name: 'Tom',    initial: 'T', colorKey: 'blue'   },
   { id: 'jules',  name: 'Jules',  initial: 'J', colorKey: 'purple' },
   { id: 'karine', name: 'Karine', initial: 'K', colorKey: 'pink'   },
@@ -63,11 +65,15 @@ export default function App() {
   const [dragOverKey,      setDragOverKey]      = useState<string | null>(null);
   // Tap-to-assign: member selected via sidebar tap (touch UX)
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  // Members as state (add / rename / delete)
+  const [members,          setMembers]          = useState<Member[]>(DEFAULT_MEMBERS);
+  const [editingMemberId,  setEditingMemberId]  = useState<string | null>(null);
+  const [editName,         setEditName]         = useState('');
 
   // --- Scores (past + today only) ---
   const scores = useMemo(() => {
     const s: Record<string, number> = {};
-    MEMBERS.forEach(m => (s[m.id] = 0));
+    members.forEach(m => (s[m.id] = 0));
     Object.entries(completed).forEach(([key, isDone]) => {
       if (!isDone || !assignments[key]) return;
       const dayId    = key.split('-').pop()!;
@@ -75,36 +81,78 @@ export default function App() {
       if (dayIndex <= TODAY_INDEX) s[assignments[key]]++;
     });
     return s;
-  }, [assignments, completed]);
+  }, [assignments, completed, members]);
 
   const maxScore     = Math.max(...Object.values(scores), 0);
-  const winners      = MEMBERS.filter(m => scores[m.id] === maxScore && maxScore > 0);
+  const winners      = members.filter(m => scores[m.id] === maxScore && maxScore > 0);
   const sortedMembers = useMemo(
-    () => [...MEMBERS].sort((a, b) => scores[b.id] - scores[a.id]),
-    [scores],
+    () => [...members].sort((a, b) => scores[b.id] - scores[a.id]),
+    [scores, members],
   );
   const memberRanks = useMemo(() => {
     const unique = [...new Set(Object.values(scores))].sort((a, b) => b - a);
     const ranks: Record<string, number> = {};
-    MEMBERS.forEach(m => { ranks[m.id] = unique.indexOf(scores[m.id]); });
+    members.forEach(m => { ranks[m.id] = unique.indexOf(scores[m.id]); });
     return ranks;
-  }, [scores]);
+  }, [scores, members]);
 
   const totalAssigned  = Object.keys(assignments).length;
   const completedCount = Object.values(completed).filter(Boolean).length;
   const progressPct    = totalAssigned === 0 ? 0 : Math.round((completedCount / totalAssigned) * 100);
-  const selectedMember = selectedMemberId ? MEMBERS.find(m => m.id === selectedMemberId) : null;
+  const selectedMember = selectedMemberId ? members.find(m => m.id === selectedMemberId) : null;
 
   // --- Actions ---
   const handleLockToggle = () => {
     setIsLocked(v => !v);
     setSelectedMemberId(null);
+    setEditingMemberId(null);
   };
 
   /** Tap a member card → select / deselect (touch UX) */
   const handleMemberTap = (memberId: string) => {
-    if (isLocked) return;
+    if (isLocked || editingMemberId) return;
     setSelectedMemberId(prev => (prev === memberId ? null : memberId));
+  };
+
+  // --- Member CRUD ---
+  const handleStartEdit = (memberId: string) => {
+    const m = members.find(x => x.id === memberId);
+    if (!m) return;
+    setEditingMemberId(memberId);
+    setEditName(m.name);
+    setSelectedMemberId(null);
+  };
+
+  const handleRename = (memberId: string) => {
+    const trimmed = editName.trim();
+    if (!trimmed) return;
+    setMembers(prev => prev.map(m =>
+      m.id === memberId
+        ? { ...m, name: trimmed, initial: trimmed[0].toUpperCase() }
+        : m,
+    ));
+    setEditingMemberId(null);
+  };
+
+  const handleDeleteMember = (memberId: string) => {
+    setMembers(prev => prev.filter(m => m.id !== memberId));
+    // Remove all assignments for this member
+    setAssignments(prev => {
+      const n = { ...prev };
+      Object.keys(n).forEach(k => { if (n[k] === memberId) delete n[k]; });
+      return n;
+    });
+    if (selectedMemberId === memberId) setSelectedMemberId(null);
+    setEditingMemberId(null);
+  };
+
+  const handleAddMember = () => {
+    const id       = `m_${Date.now()}`;
+    const colorKey = COLOR_KEYS[members.length % COLOR_KEYS.length];
+    setMembers(prev => [...prev, { id, name: 'Nouveau', initial: 'N', colorKey }]);
+    setEditingMemberId(id);
+    setEditName('Nouveau');
+    setSelectedMemberId(null);
   };
 
   // Desktop drag-and-drop
@@ -237,22 +285,77 @@ export default function App() {
 
             {/* Member cards */}
             <div className="space-y-2.5">
-              {(isLocked ? sortedMembers : MEMBERS).map(member => {
+              {(isLocked ? sortedMembers : members).map(member => {
                 const colors     = COLOR_MAP[member.colorKey];
                 const isWinner   = winners.some(w => w.id === member.id);
                 const isSelected = selectedMemberId === member.id;
                 const rank       = memberRanks[member.id];
                 const scorePct   = Math.round((scores[member.id] / Math.max(...Object.values(scores), 1)) * 100);
+                const isEditing  = editingMemberId === member.id;
 
+                // ── Edit form ──
+                if (isEditing) {
+                  return (
+                    <div key={member.id} className={`p-3 rounded-xl border-2 border-primary/50 bg-primary/5`}>
+                      {/* Input row */}
+                      <div className="flex items-center gap-2 mb-2.5">
+                        <div className={`size-9 rounded-full flex items-center justify-center font-bold text-base text-white shrink-0 ${colors.bg}`}>
+                          {editName.trim()[0]?.toUpperCase() || '?'}
+                        </div>
+                        <input
+                          autoFocus
+                          value={editName}
+                          onChange={e => setEditName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleRename(member.id);
+                            if (e.key === 'Escape') setEditingMemberId(null);
+                          }}
+                          className="flex-1 text-sm font-bold border border-primary/40 rounded-lg px-2.5 py-1.5 outline-none focus:border-primary bg-white"
+                          placeholder="Prénom…"
+                          maxLength={20}
+                        />
+                      </div>
+                      {/* Action buttons */}
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => handleRename(member.id)}
+                          disabled={!editName.trim()}
+                          className="flex-1 py-1.5 bg-primary disabled:opacity-40 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-opacity"
+                        >
+                          <span className="material-symbols-outlined text-sm">check</span>
+                          Enregistrer
+                        </button>
+                        <button
+                          onClick={() => setEditingMemberId(null)}
+                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors"
+                          aria-label="Annuler"
+                        >
+                          <span className="material-symbols-outlined text-base">close</span>
+                        </button>
+                        {members.length > 1 && (
+                          <button
+                            onClick={() => handleDeleteMember(member.id)}
+                            className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg transition-colors"
+                            aria-label="Supprimer"
+                          >
+                            <span className="material-symbols-outlined text-base">delete</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                // ── Normal card ──
                 return (
                   <div
                     key={member.id}
-                    draggable={!isLocked}
+                    draggable={!isLocked && !editingMemberId}
                     onDragStart={e => handleDragStart(e, member.id)}
                     onClick={() => handleMemberTap(member.id)}
                     className={[
                       'flex items-center gap-3 p-3 rounded-xl border-2 transition-all select-none',
-                      !isLocked ? 'cursor-pointer active:scale-95' : 'cursor-default',
+                      !isLocked && !editingMemberId ? 'cursor-pointer active:scale-95' : 'cursor-default',
                       isSelected
                         ? 'border-primary bg-primary/10 shadow-md shadow-primary/20'
                         : isWinner
@@ -297,18 +400,33 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* Right icon */}
+                    {/* Right: edit btn (edit mode) or check/drag icon */}
                     {isSelected ? (
                       <span className="material-symbols-outlined text-primary text-xl shrink-0">check_circle</span>
-                    ) : !isLocked && (
-                      <span className="material-symbols-outlined text-slate-300 text-sm shrink-0 hidden md:block">
-                        drag_indicator
-                      </span>
-                    )}
+                    ) : !isLocked ? (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleStartEdit(member.id); }}
+                        className="p-1.5 text-slate-300 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors shrink-0"
+                        aria-label={`Modifier ${member.name}`}
+                      >
+                        <span className="material-symbols-outlined text-base">edit</span>
+                      </button>
+                    ) : null}
                   </div>
                 );
               })}
             </div>
+
+            {/* Add member button */}
+            {!isLocked && members.length < 8 && !editingMemberId && (
+              <button
+                onClick={handleAddMember}
+                className="w-full mt-2 py-2.5 border-2 border-dashed border-slate-200 hover:border-primary/50 hover:bg-primary/5 text-slate-400 hover:text-primary rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all"
+              >
+                <span className="material-symbols-outlined text-base">person_add</span>
+                Ajouter un membre
+              </button>
+            )}
 
             {/* Lock button */}
             <div className="mt-5 pt-4 border-t border-slate-100">
@@ -470,7 +588,7 @@ export default function App() {
                         {DAYS.map((day, dayIdx) => {
                           const key          = `${chore.id}-${day.id}`;
                           const assignedId   = assignments[key];
-                          const member       = assignedId ? MEMBERS.find(m => m.id === assignedId) : null;
+                          const member       = assignedId ? members.find(m => m.id === assignedId) : null;
                           const isDone       = !!completed[key];
                           const colors       = member ? COLOR_MAP[member.colorKey] : null;
                           const isPast       = dayIdx < TODAY_INDEX;
@@ -600,9 +718,9 @@ export default function App() {
                 <p className="text-right text-sm font-bold text-primary mt-1">{progressPct}%</p>
               </div>
 
-              {/* Per-member cards — 2 cols on mobile, 4 on sm+ */}
+              {/* Per-member cards — 2 cols on mobile, up to 4 on sm+ */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-                {MEMBERS.map(member => {
+                {members.map(member => {
                   const memberTasks = Object.keys(assignments).filter(k => assignments[k] === member.id).length;
                   const memberDone  = scores[member.id];
                   const pct         = memberTasks === 0 ? 0 : Math.round((memberDone / memberTasks) * 100);
