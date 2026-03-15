@@ -1,0 +1,53 @@
+services:
+  planning-famille:
+    build: .
+    container_name: planning-famille
+    restart: unless-stopped
+    ports:
+      - "3051:3051"
+    volumes:
+      # Persistance des données entre redémarrages du conteneur
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3051
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Utilisation avec Traefik (reverse-proxy)
+    #
+    # Prérequis :
+    #   - Un réseau Docker externe nommé "traefik" doit exister :
+    #       docker network create traefik
+    #   - Traefik doit tourner sur ce réseau avec le provider Docker activé.
+    #
+    # Pour activer l'intégration Traefik :
+    #   1. Commenter le bloc "ports" ci-dessus (Traefik expose le service).
+    #   2. Décommenter le bloc "labels" et "networks" ci-dessous.
+    #   3. Adapter le hostname dans la règle Host().
+    # ──────────────────────────────────────────────────────────────────────────
+
+    # labels:
+    #   - "traefik.enable=true"
+    #
+    #   # Routeur HTTP → redirige vers HTTPS
+    #   - "traefik.http.routers.planning-famille-http.rule=Host(`planning.example.com`)"
+    #   - "traefik.http.routers.planning-famille-http.entrypoints=web"
+    #   - "traefik.http.routers.planning-famille-http.middlewares=redirect-to-https"
+    #
+    #   # Routeur HTTPS
+    #   - "traefik.http.routers.planning-famille.rule=Host(`planning.example.com`)"
+    #   - "traefik.http.routers.planning-famille.entrypoints=websecure"
+    #   - "traefik.http.routers.planning-famille.tls=true"
+    #   - "traefik.http.routers.planning-famille.tls.certresolver=letsencrypt"
+    #
+    #   # Service (port interne du conteneur)
+    #   - "traefik.http.services.planning-famille.loadbalancer.server.port=3051"
+    #
+    #   # Middleware redirection HTTP → HTTPS (déclaré une seule fois dans Traefik)
+    #   - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+    #   - "traefik.http.middlewares.redirect-to-https.redirectscheme.permanent=true"
+
+# networks:
+#   default:
+#     name: traefik
+#     external: true

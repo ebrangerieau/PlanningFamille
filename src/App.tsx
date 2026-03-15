@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 
 // --- Types & Constants ---
 type Member = { id: string; name: string; initial: string; colorKey: 'blue' | 'purple' | 'pink' | 'orange' };
@@ -69,6 +69,45 @@ export default function App() {
   const [members,          setMembers]          = useState<Member[]>(DEFAULT_MEMBERS);
   const [editingMemberId,  setEditingMemberId]  = useState<string | null>(null);
   const [editName,         setEditName]         = useState('');
+
+  // ── Persistence ────────────────────────────────────────────────────────────
+  const [isLoading, setIsLoading] = useState(true);
+  const isMounted  = useRef(false);   // évite la sauvegarde au premier rendu
+
+  // Chargement initial depuis le serveur
+  useEffect(() => {
+    fetch('/api/state')
+      .then(r => r.json())
+      .then((data: Record<string, unknown>) => {
+        if (Array.isArray(data.members))              setMembers(data.members as Member[]);
+        if (data.assignments && typeof data.assignments === 'object')
+          setAssignments(data.assignments as Record<string, string>);
+        if (data.completed && typeof data.completed === 'object')
+          setCompleted(data.completed as Record<string, boolean>);
+        if (data.rewardPeriod === 'semaine' || data.rewardPeriod === 'mois')
+          setRewardPeriod(data.rewardPeriod);
+        if (typeof data.rewardDescription === 'string')
+          setRewardDescription(data.rewardDescription);
+        if (typeof data.isLocked === 'boolean')
+          setIsLocked(data.isLocked);
+      })
+      .catch(() => { /* serveur indisponible → état par défaut */ })
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  // Sauvegarde automatique (debounce 600 ms) après chaque modification
+  useEffect(() => {
+    if (!isMounted.current) { isMounted.current = true; return; }
+    if (isLoading) return;
+    const timer = setTimeout(() => {
+      fetch('/api/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ members, assignments, completed, rewardPeriod, rewardDescription, isLocked }),
+      }).catch(() => { /* silencieux si le serveur est temporairement indisponible */ });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [members, assignments, completed, rewardPeriod, rewardDescription, isLocked, isLoading]);
 
   // --- Scores (past + today only) ---
   const scores = useMemo(() => {
@@ -210,6 +249,19 @@ export default function App() {
   };
 
   // ──────────────────────────────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background-light flex items-center justify-center font-display">
+        <div className="flex flex-col items-center gap-4 text-slate-400">
+          <span className="material-symbols-outlined text-5xl text-primary animate-spin" style={{ animationDuration: '1.2s' }}>
+            progress_activity
+          </span>
+          <p className="text-sm font-medium">Chargement du planning…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-background-light text-slate-900 flex min-h-screen font-display overflow-hidden">
 
