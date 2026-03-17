@@ -15,12 +15,12 @@ const DEFAULT_MEMBERS: Member[] = [
 ];
 
 const CHORES: Chore[] = [
-  { id: 'c1', name: 'Mettre la table',            icon: 'restaurant',       iconColor: 'text-orange-400' },
-  { id: 'c2', name: 'Débarrasser la table',        icon: 'cleaning_services',iconColor: 'text-green-400'  },
-  { id: 'c3', name: 'Lave-vaisselle',              icon: 'flatware',         iconColor: 'text-blue-400'   },
-  { id: 'c4', name: 'Faire chauffer le repas',     icon: 'microwave',        iconColor: 'text-red-400'    },
-  { id: 'c5', name: 'Nettoyer le plan de travail', icon: 'countertops',      iconColor: 'text-cyan-400'   },
-  { id: 'c6', name: "Passer l'aspirateur",         icon: 'vacuum',           iconColor: 'text-purple-400' },
+  { id: 'c1', name: 'Mettre la table',                    icon: 'restaurant',       iconColor: 'text-orange-400' },
+  { id: 'c2', name: 'Débarrasser la table',               icon: 'cleaning_services',iconColor: 'text-green-400'  },
+  { id: 'c3', name: 'Débarrasser le lave-vaisselle',      icon: 'flatware',         iconColor: 'text-blue-400'   },
+  { id: 'c6', name: "Passer l'aspirateur après repas",    icon: 'vacuum',           iconColor: 'text-purple-400' },
+  { id: 'c4', name: 'Faire chauffer le repas',            icon: 'microwave',        iconColor: 'text-red-400'    },
+  { id: 'c5', name: 'Nettoyer le plan de travail',        icon: 'countertops',      iconColor: 'text-cyan-400'   },
 ];
 
 const DAYS: Day[] = [
@@ -71,15 +71,19 @@ export default function App() {
   const [editName,         setEditName]         = useState('');
 
   // ── Persistence ────────────────────────────────────────────────────────────
-  const [isLoading, setIsLoading] = useState(true);
-  const isMounted  = useRef(false);   // évite la sauvegarde au premier rendu
+  const [isLoading,   setIsLoading]   = useState(true);
+  const skipNextSave  = useRef(true);  // ignore la 1ère exécution après chargement
+  // Ref toujours à jour pour sendBeacon (pas de problème de closure stale)
+  const latestState   = useRef<object>({});
+  latestState.current = { members, assignments, completed, rewardPeriod, rewardDescription, isLocked };
 
   // Chargement initial depuis le serveur
   useEffect(() => {
     fetch('/api/state')
       .then(r => r.json())
       .then((data: Record<string, unknown>) => {
-        if (Array.isArray(data.members))              setMembers(data.members as Member[]);
+        if (Array.isArray(data.members))
+          setMembers(data.members as Member[]);
         if (data.assignments && typeof data.assignments === 'object')
           setAssignments(data.assignments as Record<string, string>);
         if (data.completed && typeof data.completed === 'object')
@@ -95,19 +99,29 @@ export default function App() {
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Sauvegarde automatique (debounce 600 ms) après chaque modification
+  // Sauvegarde immédiate après chaque modification (sauf juste après le chargement)
   useEffect(() => {
-    if (!isMounted.current) { isMounted.current = true; return; }
     if (isLoading) return;
-    const timer = setTimeout(() => {
-      fetch('/api/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ members, assignments, completed, rewardPeriod, rewardDescription, isLocked }),
-      }).catch(() => { /* silencieux si le serveur est temporairement indisponible */ });
-    }, 600);
-    return () => clearTimeout(timer);
+    if (skipNextSave.current) { skipNextSave.current = false; return; }
+    fetch('/api/state', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ members, assignments, completed, rewardPeriod, rewardDescription, isLocked }),
+    }).catch(() => { /* silencieux */ });
   }, [members, assignments, completed, rewardPeriod, rewardDescription, isLocked, isLoading]);
+
+  // Filet de sécurité : sendBeacon garantit la sauvegarde même si la page est fermée
+  // immédiatement après une modification (sendBeacon est non-bloquant et fiable sur unload)
+  useEffect(() => {
+    const onUnload = () => {
+      navigator.sendBeacon(
+        '/api/state',
+        new Blob([JSON.stringify(latestState.current)], { type: 'application/json' }),
+      );
+    };
+    window.addEventListener('beforeunload', onUnload);
+    return () => window.removeEventListener('beforeunload', onUnload);
+  }, []);
 
   // --- Scores (past + today only) ---
   const scores = useMemo(() => {
