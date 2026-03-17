@@ -15,12 +15,12 @@ const DEFAULT_MEMBERS: Member[] = [
 ];
 
 const CHORES: Chore[] = [
-  { id: 'c1', name: 'Mettre la table',            icon: 'restaurant',       iconColor: 'text-orange-400' },
-  { id: 'c2', name: 'Débarrasser la table',        icon: 'cleaning_services',iconColor: 'text-green-400'  },
-  { id: 'c3', name: 'Lave-vaisselle',              icon: 'flatware',         iconColor: 'text-blue-400'   },
-  { id: 'c4', name: 'Faire chauffer le repas',     icon: 'microwave',        iconColor: 'text-red-400'    },
-  { id: 'c5', name: 'Nettoyer le plan de travail', icon: 'countertops',      iconColor: 'text-cyan-400'   },
-  { id: 'c6', name: "Passer l'aspirateur",         icon: 'vacuum',           iconColor: 'text-purple-400' },
+  { id: 'c1', name: 'Mettre la table',                    icon: 'restaurant',       iconColor: 'text-orange-400' },
+  { id: 'c2', name: 'Débarrasser la table',               icon: 'cleaning_services',iconColor: 'text-green-400'  },
+  { id: 'c3', name: 'Débarrasser le lave-vaisselle',      icon: 'flatware',         iconColor: 'text-blue-400'   },
+  { id: 'c6', name: "Passer l'aspirateur après repas",    icon: 'vacuum',           iconColor: 'text-purple-400' },
+  { id: 'c4', name: 'Faire chauffer le repas',            icon: 'microwave',        iconColor: 'text-red-400'    },
+  { id: 'c5', name: 'Nettoyer le plan de travail',        icon: 'countertops',      iconColor: 'text-cyan-400'   },
 ];
 
 const DAYS: Day[] = [
