@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 type Member = { id: string; name: string; initial: string; colorKey: 'blue' | 'purple' | 'pink' | 'orange' };
 type Chore  = { id: string; name: string; icon: string; iconColor: string };
 type Day    = { id: string; short: string };
+type WeekHistory = { week: string; assignments: Record<string, string>; completed: Record<string, boolean> };
 
 const COLOR_KEYS: Array<Member['colorKey']> = ['blue', 'purple', 'pink', 'orange'];
 
@@ -51,6 +52,36 @@ function getWeekRange(): string {
   return `${fmt(monday)} – ${fmt(sunday)}`;
 }
 
+/** ISO week id, e.g. "2026-W13" */
+function getISOWeekId(date = new Date()): string {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+/** Monday of the given ISO week */
+function getWeekMonday(weekId: string): Date {
+  const m = weekId.match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return new Date();
+  const jan4 = new Date(+m[1], 0, 4);
+  const dow = jan4.getDay() || 7;
+  const w1Mon = new Date(jan4);
+  w1Mon.setDate(jan4.getDate() - dow + 1);
+  const result = new Date(w1Mon);
+  result.setDate(w1Mon.getDate() + (+m[2] - 1) * 7);
+  return result;
+}
+
+/** Does the ISO week's Thursday fall in the given YYYY-MM month? */
+function weekInMonth(weekId: string, yearMonth: string): boolean {
+  const mon = getWeekMonday(weekId);
+  const thu = new Date(mon);
+  thu.setDate(mon.getDate() + 3);
+  return `${thu.getFullYear()}-${String(thu.getMonth() + 1).padStart(2, '0')}` === yearMonth;
+}
+
 export default function App() {
   // Sidebar starts open on desktop, closed on mobile
   const [isSidebarOpen, setIsSidebarOpen] = useState(
@@ -69,49 +100,69 @@ export default function App() {
   const [members,          setMembers]          = useState<Member[]>(DEFAULT_MEMBERS);
   const [editingMemberId,  setEditingMemberId]  = useState<string | null>(null);
   const [editName,         setEditName]         = useState('');
+  // ── Suivi hebdomadaire ──
+  const [currentWeek,      setCurrentWeek]      = useState(getISOWeekId());
+  const [history,          setHistory]          = useState<WeekHistory[]>([]);
+  const [statsPeriod,      setStatsPeriod]      = useState<'week' | 'lastWeek' | 'month' | 'all'>('week');
 
   // ── Persistence ────────────────────────────────────────────────────────────
   const [isLoading,   setIsLoading]   = useState(true);
-  const skipNextSave  = useRef(true);  // ignore la 1ère exécution après chargement
-  // Ref toujours à jour pour sendBeacon (pas de problème de closure stale)
+  const skipNextSave  = useRef(true);
   const latestState   = useRef<object>({});
-  latestState.current = { members, assignments, completed, rewardPeriod, rewardDescription, isLocked };
+  latestState.current = { members, assignments, completed, currentWeek, history, rewardPeriod, rewardDescription, isLocked };
 
-  // Chargement initial depuis le serveur
+  // Chargement initial + migration ancien format + archivage automatique de semaine
   useEffect(() => {
     fetch('/api/state')
       .then(r => r.json())
       .then((data: Record<string, unknown>) => {
-        if (Array.isArray(data.members))
-          setMembers(data.members as Member[]);
+        if (Array.isArray(data.members))              setMembers(data.members as Member[]);
         if (data.assignments && typeof data.assignments === 'object')
           setAssignments(data.assignments as Record<string, string>);
-        if (data.completed && typeof data.completed === 'object')
-          setCompleted(data.completed as Record<string, boolean>);
         if (data.rewardPeriod === 'semaine' || data.rewardPeriod === 'mois')
           setRewardPeriod(data.rewardPeriod);
         if (typeof data.rewardDescription === 'string')
           setRewardDescription(data.rewardDescription);
         if (typeof data.isLocked === 'boolean')
           setIsLocked(data.isLocked);
+
+        const thisWeek      = getISOWeekId();
+        const savedWeek     = typeof data.currentWeek === 'string' ? data.currentWeek : null;
+        const loadedHistory = Array.isArray(data.history) ? data.history as WeekHistory[] : [];
+        const oldCompleted  = (data.completed && typeof data.completed === 'object')
+          ? data.completed as Record<string, boolean> : {};
+        const oldAssign     = (data.assignments && typeof data.assignments === 'object')
+          ? data.assignments as Record<string, string> : {};
+
+        if (savedWeek && savedWeek !== thisWeek) {
+          // Nouvelle semaine → archiver l'ancienne, repartir à zéro
+          const archived: WeekHistory = { week: savedWeek, assignments: oldAssign, completed: oldCompleted };
+          setHistory([...loadedHistory, archived]);
+          setCompleted({});
+          setIsLocked(false); // déverrouiller pour la nouvelle semaine
+        } else {
+          // Même semaine (ou tout premier lancement sans currentWeek)
+          setCompleted(oldCompleted);
+          setHistory(loadedHistory);
+        }
+        setCurrentWeek(thisWeek);
       })
       .catch(() => { /* serveur indisponible → état par défaut */ })
       .finally(() => setIsLoading(false));
   }, []);
 
-  // Sauvegarde immédiate après chaque modification (sauf juste après le chargement)
+  // Sauvegarde immédiate après chaque modification
   useEffect(() => {
     if (isLoading) return;
     if (skipNextSave.current) { skipNextSave.current = false; return; }
     fetch('/api/state', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ members, assignments, completed, rewardPeriod, rewardDescription, isLocked }),
-    }).catch(() => { /* silencieux */ });
-  }, [members, assignments, completed, rewardPeriod, rewardDescription, isLocked, isLoading]);
+      body: JSON.stringify({ members, assignments, completed, currentWeek, history, rewardPeriod, rewardDescription, isLocked }),
+    }).catch(() => {});
+  }, [members, assignments, completed, currentWeek, history, rewardPeriod, rewardDescription, isLocked, isLoading]);
 
-  // Filet de sécurité : sendBeacon garantit la sauvegarde même si la page est fermée
-  // immédiatement après une modification (sendBeacon est non-bloquant et fiable sur unload)
+  // sendBeacon sur fermeture de page
   useEffect(() => {
     const onUnload = () => {
       navigator.sendBeacon(
@@ -136,22 +187,75 @@ export default function App() {
     return s;
   }, [assignments, completed, members]);
 
-  const maxScore     = Math.max(...Object.values(scores), 0);
+  const maxScore     = Math.max(...(Object.values(scores) as number[]), 0);
   const winners      = members.filter(m => scores[m.id] === maxScore && maxScore > 0);
   const sortedMembers = useMemo(
     () => [...members].sort((a, b) => scores[b.id] - scores[a.id]),
     [scores, members],
   );
   const memberRanks = useMemo(() => {
-    const unique = [...new Set(Object.values(scores))].sort((a, b) => b - a);
+    const unique = [...new Set(Object.values(scores) as number[])].sort((a, b) => b - a);
     const ranks: Record<string, number> = {};
     members.forEach(m => { ranks[m.id] = unique.indexOf(scores[m.id]); });
     return ranks;
   }, [scores, members]);
 
-  const totalAssigned  = Object.keys(assignments).length;
-  const completedCount = Object.values(completed).filter(Boolean).length;
-  const progressPct    = totalAssigned === 0 ? 0 : Math.round((completedCount / totalAssigned) * 100);
+  // --- Statistiques multi-périodes ---
+  const periodData = useMemo(() => {
+    type WE = { a: Record<string, string>; c: Record<string, boolean>; isCurrent: boolean };
+    const weeks: WE[] = [];
+
+    switch (statsPeriod) {
+      case 'week':
+        weeks.push({ a: assignments, c: completed, isCurrent: true });
+        break;
+      case 'lastWeek': {
+        const last = history[history.length - 1];
+        if (last) weeks.push({ a: last.assignments, c: last.completed, isCurrent: false });
+        break;
+      }
+      case 'month': {
+        const now = new Date();
+        const ym  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        if (weekInMonth(currentWeek, ym))
+          weeks.push({ a: assignments, c: completed, isCurrent: true });
+        history.forEach(h => {
+          if (weekInMonth(h.week, ym))
+            weeks.push({ a: h.assignments, c: h.completed, isCurrent: false });
+        });
+        break;
+      }
+      case 'all':
+        weeks.push({ a: assignments, c: completed, isCurrent: true });
+        history.forEach(h => weeks.push({ a: h.assignments, c: h.completed, isCurrent: false }));
+        break;
+    }
+
+    const pScores: Record<string, number> = {};
+    const taskCounts: Record<string, number> = {};
+    members.forEach(m => { pScores[m.id] = 0; taskCounts[m.id] = 0; });
+    let totalAssigned = 0, totalCompleted = 0;
+
+    weeks.forEach(({ a, c, isCurrent }) => {
+      Object.entries(a).forEach(([key, memberId]) => {
+        if (isCurrent) {
+          const dayId  = key.split('-').pop()!;
+          const dayIdx = DAYS.findIndex(d => d.id === dayId);
+          if (dayIdx > TODAY_INDEX) return; // jours futurs ignorés pour la semaine en cours
+        }
+        totalAssigned++;
+        if (taskCounts[memberId] !== undefined) taskCounts[memberId]++;
+        if (c[key]) {
+          totalCompleted++;
+          if (pScores[memberId] !== undefined) pScores[memberId]++;
+        }
+      });
+    });
+
+    const progressPct = totalAssigned === 0 ? 0 : Math.round((totalCompleted / totalAssigned) * 100);
+    return { scores: pScores, taskCounts, totalAssigned, totalCompleted, progressPct, weekCount: weeks.length };
+  }, [statsPeriod, members, assignments, completed, history, currentWeek]);
+
   const selectedMember = selectedMemberId ? members.find(m => m.id === selectedMemberId) : null;
 
   // --- Actions ---
@@ -356,7 +460,7 @@ export default function App() {
                 const isWinner   = winners.some(w => w.id === member.id);
                 const isSelected = selectedMemberId === member.id;
                 const rank       = memberRanks[member.id];
-                const scorePct   = Math.round((scores[member.id] / Math.max(...Object.values(scores), 1)) * 100);
+                const scorePct   = Math.round((scores[member.id] / Math.max(...(Object.values(scores) as number[]), 1)) * 100);
                 const isEditing  = editingMemberId === member.id;
 
                 // ── Edit form ──
@@ -762,35 +866,70 @@ export default function App() {
 
             {/* Progression */}
             <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <h3 className="text-sm sm:text-base font-bold mb-4 flex items-center gap-2">
+              <h3 className="text-sm sm:text-base font-bold mb-3 flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-xl">trending_up</span>
                 Progression de la tribu
               </h3>
 
-              {/* Global bar */}
+              {/* Sélecteur de période */}
+              <div className="flex gap-1.5 mb-4 flex-wrap">
+                {([
+                  { key: 'week'     as const, label: 'Cette semaine' },
+                  { key: 'lastWeek' as const, label: 'Sem. dernière' },
+                  { key: 'month'    as const, label: 'Ce mois' },
+                  { key: 'all'      as const, label: 'Tout' },
+                ]).map(({ key, label }) => {
+                  const disabled = key === 'lastWeek' && history.length === 0;
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => !disabled && setStatsPeriod(key)}
+                      disabled={disabled}
+                      className={[
+                        'px-3 py-1.5 rounded-lg text-xs font-semibold transition-all',
+                        statsPeriod === key
+                          ? 'bg-primary text-white shadow-sm'
+                          : disabled
+                          ? 'bg-slate-50 text-slate-300 cursor-not-allowed'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+                      ].join(' ')}
+                    >
+                      {label}
+                      {key === 'all' && history.length > 0 && (
+                        <span className="ml-1 opacity-70">({history.length + 1})</span>
+                      )}
+                      {key === 'month' && periodData.weekCount > 1 && statsPeriod === 'month' && (
+                        <span className="ml-1 opacity-70">({periodData.weekCount} sem.)</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Barre globale */}
               <div className="mb-4">
                 <div className="flex justify-between text-sm mb-1.5">
                   <span className="text-slate-600 font-medium">Tâches accomplies</span>
                   <span className="font-bold text-primary">
-                    {completedCount} / {totalAssigned || CHORES.length * DAYS.length}
+                    {periodData.totalCompleted} / {periodData.totalAssigned || '—'}
                   </span>
                 </div>
                 <div className="w-full h-3 sm:h-4 bg-slate-100 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-primary to-orange-400 rounded-full transition-all duration-500"
-                    style={{ width: `${progressPct}%` }}
+                    style={{ width: `${periodData.progressPct}%` }}
                   />
                 </div>
-                <p className="text-right text-sm font-bold text-primary mt-1">{progressPct}%</p>
+                <p className="text-right text-sm font-bold text-primary mt-1">{periodData.progressPct}%</p>
               </div>
 
-              {/* Per-member cards — 2 cols on mobile, up to 4 on sm+ */}
+              {/* Cartes par membre */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                 {members.map(member => {
-                  const memberTasks = Object.keys(assignments).filter(k => assignments[k] === member.id).length;
-                  const memberDone  = scores[member.id];
-                  const pct         = memberTasks === 0 ? 0 : Math.round((memberDone / memberTasks) * 100);
-                  const colors      = COLOR_MAP[member.colorKey];
+                  const mTasks = periodData.taskCounts[member.id] || 0;
+                  const mDone  = periodData.scores[member.id] || 0;
+                  const pct    = mTasks === 0 ? 0 : Math.round((mDone / mTasks) * 100);
+                  const colors = COLOR_MAP[member.colorKey];
                   return (
                     <div key={member.id} className={`p-2.5 sm:p-3 rounded-xl ${colors.cardBg}`}>
                       <div className={`size-8 sm:size-9 rounded-full ${colors.bg} text-white font-bold text-sm flex items-center justify-center mx-auto mb-1.5`}>
@@ -798,11 +937,18 @@ export default function App() {
                       </div>
                       <p className="text-xs font-semibold text-slate-600">{member.name}</p>
                       <p className={`text-xl font-bold ${colors.text}`}>{pct}%</p>
-                      <p className="text-[10px] text-slate-400">{memberDone}/{memberTasks} pts</p>
+                      <p className="text-[10px] text-slate-400">{mDone}/{mTasks} pts</p>
                     </div>
                   );
                 })}
               </div>
+
+              {/* Info quand pas de données */}
+              {periodData.totalAssigned === 0 && statsPeriod !== 'week' && (
+                <p className="text-center text-sm text-slate-400 mt-3 italic">
+                  Aucune donnée pour cette période
+                </p>
+              )}
             </div>
 
             {/* Reward & Tips */}
