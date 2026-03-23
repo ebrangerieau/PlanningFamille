@@ -1,291 +1,32 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import type { Member, WeekHistory } from './types';
-import { COLOR_KEYS, DEFAULT_MEMBERS, CHORES, DAYS, TODAY_INDEX, COLOR_MAP, RANK_EMOJI } from './constants';
-import { getWeekRange, getISOWeekId, weekInMonth } from './utils/date';
+import React from 'react';
+import { CHORES, DAYS, TODAY_INDEX, COLOR_MAP, RANK_EMOJI } from './constants';
+import { getWeekRange } from './utils/date';
+import { useAppState } from './hooks/useAppState';
+import { usePersistence } from './hooks/usePersistence';
+import { useStats } from './hooks/useStats';
 
 export default function App() {
-  // Sidebar starts open on desktop, closed on mobile
-  const [isSidebarOpen, setIsSidebarOpen] = useState(
-    () => typeof window !== 'undefined' && window.innerWidth >= 768,
-  );
-  const [isLocked,         setIsLocked]         = useState(false);
-  const [assignments,      setAssignments]      = useState<Record<string, string>>({});
-  const [completed,        setCompleted]        = useState<Record<string, boolean>>({});
-  const [rewardPeriod,     setRewardPeriod]     = useState<'semaine' | 'mois'>('semaine');
-  const [rewardDescription,setRewardDescription]= useState('Soirée Cinéma + Pizza 🍕');
-  const [isEditingReward,  setIsEditingReward]  = useState(false);
-  const [dragOverKey,      setDragOverKey]      = useState<string | null>(null);
-  // Tap-to-assign: member selected via sidebar tap (touch UX)
-  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  // Members as state (add / rename / delete)
-  const [members,          setMembers]          = useState<Member[]>(DEFAULT_MEMBERS);
-  const [editingMemberId,  setEditingMemberId]  = useState<string | null>(null);
-  const [editName,         setEditName]         = useState('');
-  // ── Suivi hebdomadaire ──
-  const [currentWeek,      setCurrentWeek]      = useState(getISOWeekId());
-  const [history,          setHistory]          = useState<WeekHistory[]>([]);
-  const [statsPeriod,      setStatsPeriod]      = useState<'week' | 'lastWeek' | 'month' | 'all'>('week');
+  const state = useAppState();
+  usePersistence(state);
+  const periodData = useStats(state);
 
-  // ── Persistence ────────────────────────────────────────────────────────────
-  const [isLoading,   setIsLoading]   = useState(true);
-  const skipNextSave  = useRef(true);
-  const latestState   = useRef<object>({});
-  latestState.current = { members, assignments, completed, currentWeek, history, rewardPeriod, rewardDescription, isLocked };
-
-  // Chargement initial + migration ancien format + archivage automatique de semaine
-  useEffect(() => {
-    fetch('/api/state')
-      .then(r => r.json())
-      .then((data: Record<string, unknown>) => {
-        if (Array.isArray(data.members))              setMembers(data.members as Member[]);
-        if (data.assignments && typeof data.assignments === 'object')
-          setAssignments(data.assignments as Record<string, string>);
-        if (data.rewardPeriod === 'semaine' || data.rewardPeriod === 'mois')
-          setRewardPeriod(data.rewardPeriod);
-        if (typeof data.rewardDescription === 'string')
-          setRewardDescription(data.rewardDescription);
-        if (typeof data.isLocked === 'boolean')
-          setIsLocked(data.isLocked);
-
-        const thisWeek      = getISOWeekId();
-        const savedWeek     = typeof data.currentWeek === 'string' ? data.currentWeek : null;
-        const loadedHistory = Array.isArray(data.history) ? data.history as WeekHistory[] : [];
-        const oldCompleted  = (data.completed && typeof data.completed === 'object')
-          ? data.completed as Record<string, boolean> : {};
-        const oldAssign     = (data.assignments && typeof data.assignments === 'object')
-          ? data.assignments as Record<string, string> : {};
-
-        if (savedWeek && savedWeek !== thisWeek) {
-          // Nouvelle semaine → archiver l'ancienne, repartir à zéro
-          const archived: WeekHistory = { week: savedWeek, assignments: oldAssign, completed: oldCompleted };
-          setHistory([...loadedHistory, archived]);
-          setCompleted({});
-          setIsLocked(false); // déverrouiller pour la nouvelle semaine
-        } else {
-          // Même semaine (ou tout premier lancement sans currentWeek)
-          setCompleted(oldCompleted);
-          setHistory(loadedHistory);
-        }
-        setCurrentWeek(thisWeek);
-      })
-      .catch(() => { /* serveur indisponible → état par défaut */ })
-      .finally(() => setIsLoading(false));
-  }, []);
-
-  // Sauvegarde immédiate après chaque modification
-  useEffect(() => {
-    if (isLoading) return;
-    if (skipNextSave.current) { skipNextSave.current = false; return; }
-    fetch('/api/state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ members, assignments, completed, currentWeek, history, rewardPeriod, rewardDescription, isLocked }),
-    }).catch(() => {});
-  }, [members, assignments, completed, currentWeek, history, rewardPeriod, rewardDescription, isLocked, isLoading]);
-
-  // sendBeacon sur fermeture de page
-  useEffect(() => {
-    const onUnload = () => {
-      navigator.sendBeacon(
-        '/api/state',
-        new Blob([JSON.stringify(latestState.current)], { type: 'application/json' }),
-      );
-    };
-    window.addEventListener('beforeunload', onUnload);
-    return () => window.removeEventListener('beforeunload', onUnload);
-  }, []);
-
-  // --- Scores (past + today only) ---
-  const scores = useMemo(() => {
-    const s: Record<string, number> = {};
-    members.forEach(m => (s[m.id] = 0));
-    Object.entries(completed).forEach(([key, isDone]) => {
-      if (!isDone || !assignments[key]) return;
-      const dayId    = key.split('-').pop()!;
-      const dayIndex = DAYS.findIndex(d => d.id === dayId);
-      if (dayIndex <= TODAY_INDEX) s[assignments[key]]++;
-    });
-    return s;
-  }, [assignments, completed, members]);
-
-  const maxScore     = Math.max(...(Object.values(scores) as number[]), 0);
-  const winners      = members.filter(m => scores[m.id] === maxScore && maxScore > 0);
-  const sortedMembers = useMemo(
-    () => [...members].sort((a, b) => scores[b.id] - scores[a.id]),
-    [scores, members],
-  );
-  const memberRanks = useMemo(() => {
-    const unique = [...new Set(Object.values(scores) as number[])].sort((a, b) => b - a);
-    const ranks: Record<string, number> = {};
-    members.forEach(m => { ranks[m.id] = unique.indexOf(scores[m.id]); });
-    return ranks;
-  }, [scores, members]);
-
-  // --- Statistiques multi-périodes ---
-  const periodData = useMemo(() => {
-    type WE = { a: Record<string, string>; c: Record<string, boolean>; isCurrent: boolean };
-    const weeks: WE[] = [];
-
-    switch (statsPeriod) {
-      case 'week':
-        weeks.push({ a: assignments, c: completed, isCurrent: true });
-        break;
-      case 'lastWeek': {
-        const last = history[history.length - 1];
-        if (last) weeks.push({ a: last.assignments, c: last.completed, isCurrent: false });
-        break;
-      }
-      case 'month': {
-        const now = new Date();
-        const ym  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        if (weekInMonth(currentWeek, ym))
-          weeks.push({ a: assignments, c: completed, isCurrent: true });
-        history.forEach(h => {
-          if (weekInMonth(h.week, ym))
-            weeks.push({ a: h.assignments, c: h.completed, isCurrent: false });
-        });
-        break;
-      }
-      case 'all':
-        weeks.push({ a: assignments, c: completed, isCurrent: true });
-        history.forEach(h => weeks.push({ a: h.assignments, c: h.completed, isCurrent: false }));
-        break;
-    }
-
-    const pScores: Record<string, number> = {};
-    const taskCounts: Record<string, number> = {};
-    members.forEach(m => { pScores[m.id] = 0; taskCounts[m.id] = 0; });
-    let totalAssigned = 0, totalCompleted = 0;
-
-    weeks.forEach(({ a, c, isCurrent }) => {
-      Object.entries(a).forEach(([key, memberId]) => {
-        if (isCurrent) {
-          const dayId  = key.split('-').pop()!;
-          const dayIdx = DAYS.findIndex(d => d.id === dayId);
-          if (dayIdx > TODAY_INDEX) return; // jours futurs ignorés pour la semaine en cours
-        }
-        totalAssigned++;
-        if (taskCounts[memberId] !== undefined) taskCounts[memberId]++;
-        if (c[key]) {
-          totalCompleted++;
-          if (pScores[memberId] !== undefined) pScores[memberId]++;
-        }
-      });
-    });
-
-    const progressPct = totalAssigned === 0 ? 0 : Math.round((totalCompleted / totalAssigned) * 100);
-    return { scores: pScores, taskCounts, totalAssigned, totalCompleted, progressPct, weekCount: weeks.length };
-  }, [statsPeriod, members, assignments, completed, history, currentWeek]);
-
-  const selectedMember = selectedMemberId ? members.find(m => m.id === selectedMemberId) : null;
-
-  // --- Actions ---
-  const handleLockToggle = () => {
-    setIsLocked(v => !v);
-    setSelectedMemberId(null);
-    setEditingMemberId(null);
-  };
-
-  /** Tap a member card → select / deselect (touch UX) */
-  const handleMemberTap = (memberId: string) => {
-    if (isLocked || editingMemberId) return;
-    setSelectedMemberId(prev => (prev === memberId ? null : memberId));
-  };
-
-  // --- Member CRUD ---
-  const handleStartEdit = (memberId: string) => {
-    const m = members.find(x => x.id === memberId);
-    if (!m) return;
-    setEditingMemberId(memberId);
-    setEditName(m.name);
-    setSelectedMemberId(null);
-  };
-
-  const handleRename = (memberId: string) => {
-    const trimmed = editName.trim();
-    if (!trimmed) return;
-    setMembers(prev => prev.map(m =>
-      m.id === memberId
-        ? { ...m, name: trimmed, initial: trimmed[0].toUpperCase() }
-        : m,
-    ));
-    setEditingMemberId(null);
-  };
-
-  const handleDeleteMember = (memberId: string) => {
-    setMembers(prev => prev.filter(m => m.id !== memberId));
-    // Remove all assignments for this member
-    setAssignments(prev => {
-      const n = { ...prev };
-      Object.keys(n).forEach(k => { if (n[k] === memberId) delete n[k]; });
-      return n;
-    });
-    if (selectedMemberId === memberId) setSelectedMemberId(null);
-    setEditingMemberId(null);
-  };
-
-  const handleAddMember = () => {
-    const id       = `m_${Date.now()}`;
-    const colorKey = COLOR_KEYS[members.length % COLOR_KEYS.length];
-    setMembers(prev => [...prev, { id, name: 'Nouveau', initial: 'N', colorKey }]);
-    setEditingMemberId(id);
-    setEditName('Nouveau');
-    setSelectedMemberId(null);
-  };
-
-  // Desktop drag-and-drop
-  const handleDragStart = (e: React.DragEvent, memberId: string) => {
-    if (isLocked) { e.preventDefault(); return; }
-    e.dataTransfer.setData('memberId', memberId);
-    e.dataTransfer.effectAllowed = 'copy';
-    setSelectedMemberId(null);
-  };
-  const handleDragOver = (e: React.DragEvent, key: string) => {
-    if (isLocked) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
-    setDragOverKey(key);
-  };
-  const handleDragLeave = () => setDragOverKey(null);
-  const handleDrop = (e: React.DragEvent, choreId: string, dayId: string) => {
-    if (isLocked) return;
-    e.preventDefault();
-    const memberId = e.dataTransfer.getData('memberId');
-    if (memberId) {
-      const key = `${choreId}-${dayId}`;
-      setAssignments(prev => ({ ...prev, [key]: memberId }));
-      setCompleted(prev => ({ ...prev, [key]: false }));
-    }
-    setDragOverKey(null);
-  };
-
-  /** Cell tap: assign selected member OR toggle completion */
-  const handleCellClick = (choreId: string, dayId: string) => {
-    const key      = `${choreId}-${dayId}`;
-    const dayIndex = DAYS.findIndex(d => d.id === dayId);
-
-    if (!isLocked) {
-      if (selectedMemberId) {
-        // Tap-to-assign (or remove if same member)
-        if (assignments[key] === selectedMemberId) {
-          setAssignments(prev => { const n = { ...prev }; delete n[key]; return n; });
-          setCompleted(prev =>   { const n = { ...prev }; delete n[key]; return n; });
-        } else {
-          setAssignments(prev => ({ ...prev, [key]: selectedMemberId }));
-          setCompleted(prev =>   ({ ...prev, [key]: false }));
-        }
-      } else if (assignments[key]) {
-        // Click on assigned cell without selection → remove
-        setAssignments(prev => { const n = { ...prev }; delete n[key]; return n; });
-        setCompleted(prev =>   { const n = { ...prev }; delete n[key]; return n; });
-      }
-    } else {
-      // Locked: toggle only for past + today
-      if (assignments[key] && dayIndex <= TODAY_INDEX) {
-        setCompleted(prev => ({ ...prev, [key]: !prev[key] }));
-      }
-    }
-  };
+  const {
+    isSidebarOpen, setIsSidebarOpen,
+    isLocked, isLoading,
+    assignments, completed, members,
+    currentWeek, history,
+    rewardPeriod, setRewardPeriod,
+    rewardDescription, setRewardDescription,
+    isEditingReward, setIsEditingReward,
+    dragOverKey, selectedMemberId, setSelectedMemberId,
+    editingMemberId, editName, setEditName,
+    statsPeriod, setStatsPeriod,
+    scores, maxScore, winners, sortedMembers, memberRanks, selectedMember,
+    handleLockToggle, handleMemberTap,
+    handleStartEdit, handleRename, handleDeleteMember, handleAddMember,
+    handleDragStart, handleDragOver, handleDragLeave, handleDrop,
+    handleCellClick,
+  } = state;
 
   // ──────────────────────────────────────────────────────────────────────────
   if (isLoading) {
