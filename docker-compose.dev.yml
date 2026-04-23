@@ -1,0 +1,21 @@
+# Configuration DÉVELOPPEMENT LOCAL (sans Traefik)
+# ─────────────────────────────────────────────────
+# Usage :
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Le port 3051 est exposé sur la machine hôte.
+# Pas besoin de réseau `web`, pas de TLS, pas de labels Traefik.
+
+services:
+  planning-famille:
+    build: .
+    image: planning-famille:dev
+    container_name: planning-famille-dev
+    restart: unless-stopped
+    ports:
+      - "3051:3051"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3051
