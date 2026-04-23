@@ -1,9 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import type { Member, WeekHistory } from '../types';
+import type { Identity, Member, WeekHistory } from '../types';
 import { COLOR_KEYS, DEFAULT_MEMBERS, DAYS, TODAY_INDEX } from '../constants';
 import { getISOWeekId } from '../utils/date';
 
-export function useAppState() {
+export function useAppState(identity: Identity | null) {
+  const role     = identity?.role ?? null;
+  const isParent = role === 'parent';
+  const isChild  = role === 'child';
+  const childId  = isChild ? identity?.memberId ?? null : null;
   const [isSidebarOpen,      setIsSidebarOpen]      = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 768,
   );
@@ -51,19 +55,21 @@ export function useAppState() {
 
   const selectedMember = selectedMemberId ? members.find(m => m.id === selectedMemberId) : null;
 
-  // --- Actions ---
+  // --- Actions (gated by role) ---
   const handleLockToggle = () => {
+    if (!isParent) return;
     setIsLocked(v => !v);
     setSelectedMemberId(null);
     setEditingMemberId(null);
   };
 
   const handleMemberTap = (memberId: string) => {
-    if (isLocked || editingMemberId) return;
+    if (!isParent || isLocked || editingMemberId) return;
     setSelectedMemberId(prev => (prev === memberId ? null : memberId));
   };
 
   const handleStartEdit = (memberId: string) => {
+    if (!isParent) return;
     const m = members.find(x => x.id === memberId);
     if (!m) return;
     setEditingMemberId(memberId);
@@ -72,6 +78,7 @@ export function useAppState() {
   };
 
   const handleRename = (memberId: string) => {
+    if (!isParent) return;
     const trimmed = editName.trim();
     if (!trimmed) return;
     setMembers(prev => prev.map(m =>
@@ -83,6 +90,7 @@ export function useAppState() {
   };
 
   const handleDeleteMember = (memberId: string) => {
+    if (!isParent) return;
     setMembers(prev => prev.filter(m => m.id !== memberId));
     setAssignments(prev => {
       const n = { ...prev };
@@ -94,6 +102,7 @@ export function useAppState() {
   };
 
   const handleAddMember = () => {
+    if (!isParent) return;
     const id       = `m_${Date.now()}`;
     const colorKey = COLOR_KEYS[members.length % COLOR_KEYS.length];
     setMembers(prev => [...prev, { id, name: 'Nouveau', initial: 'N', colorKey }]);
@@ -103,14 +112,14 @@ export function useAppState() {
   };
 
   const handleDragStart = (e: React.DragEvent, memberId: string) => {
-    if (isLocked) { e.preventDefault(); return; }
+    if (!isParent || isLocked) { e.preventDefault(); return; }
     e.dataTransfer.setData('memberId', memberId);
     e.dataTransfer.effectAllowed = 'copy';
     setSelectedMemberId(null);
   };
 
   const handleDragOver = (e: React.DragEvent, key: string) => {
-    if (isLocked) return;
+    if (!isParent || isLocked) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     setDragOverKey(key);
@@ -119,7 +128,7 @@ export function useAppState() {
   const handleDragLeave = () => setDragOverKey(null);
 
   const handleDrop = (e: React.DragEvent, choreId: string, dayId: string) => {
-    if (isLocked) return;
+    if (!isParent || isLocked) return;
     e.preventDefault();
     const memberId = e.dataTransfer.getData('memberId');
     if (memberId) {
@@ -134,7 +143,8 @@ export function useAppState() {
     const key      = `${choreId}-${dayId}`;
     const dayIndex = DAYS.findIndex(d => d.id === dayId);
 
-    if (!isLocked) {
+    // Parent non verrouillé : assignation / désassignation.
+    if (isParent && !isLocked) {
       if (selectedMemberId) {
         if (assignments[key] === selectedMemberId) {
           setAssignments(prev => { const n = { ...prev }; delete n[key]; return n; });
@@ -147,14 +157,27 @@ export function useAppState() {
         setAssignments(prev => { const n = { ...prev }; delete n[key]; return n; });
         setCompleted(prev =>   { const n = { ...prev }; delete n[key]; return n; });
       }
-    } else {
-      if (assignments[key] && dayIndex <= TODAY_INDEX) {
-        setCompleted(prev => ({ ...prev, [key]: !prev[key] }));
-      }
+      return;
+    }
+
+    // Validation d'une tâche (case cochée) : le jour doit être passé ou aujourd'hui.
+    if (dayIndex > TODAY_INDEX || !assignments[key]) return;
+
+    // Parent verrouillé : peut cocher n'importe quelle tâche.
+    if (isParent && isLocked) {
+      setCompleted(prev => ({ ...prev, [key]: !prev[key] }));
+      return;
+    }
+
+    // Enfant : peut cocher uniquement ses propres tâches.
+    if (isChild && childId && assignments[key] === childId) {
+      setCompleted(prev => ({ ...prev, [key]: !prev[key] }));
     }
   };
 
   return {
+    // Identity (derived)
+    role, isParent, isChild,
     // UI state
     isSidebarOpen, setIsSidebarOpen,
     // App state

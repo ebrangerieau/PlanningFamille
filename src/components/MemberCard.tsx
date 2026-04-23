@@ -13,6 +13,7 @@ interface MemberCardProps {
   winners:             Member[];
   membersCount:        number;
   editingMemberId:     string | null;
+  canEdit:             boolean;
   onTap:               (id: string) => void;
   onStartEdit:         (id: string) => void;
   onRename:            (id: string) => void;
@@ -24,7 +25,7 @@ interface MemberCardProps {
 
 export function MemberCard({
   member, isLocked, isSelected, isEditing, editName, rank, scores, winners,
-  membersCount, editingMemberId, onTap, onStartEdit, onRename, onDelete,
+  membersCount, editingMemberId, canEdit, onTap, onStartEdit, onRename, onDelete,
   onEditNameChange, onCancelEdit, onDragStart,
 }: MemberCardProps) {
   const colors    = COLOR_MAP[member.colorKey];
@@ -81,14 +82,15 @@ export function MemberCard({
     );
   }
 
+  const canInteract = canEdit && !isLocked && !editingMemberId;
   return (
     <div
-      draggable={!isLocked && !editingMemberId}
+      draggable={canInteract}
       onDragStart={e => onDragStart(e, member.id)}
-      onClick={() => onTap(member.id)}
+      onClick={() => canInteract && onTap(member.id)}
       className={[
         'flex items-center gap-3 p-3 rounded-xl border-2 transition-all select-none',
-        !isLocked && !editingMemberId ? 'cursor-pointer active:scale-95' : 'cursor-default',
+        canInteract ? 'cursor-pointer active:scale-95' : 'cursor-default',
         isSelected
           ? 'border-primary bg-primary/10 shadow-md shadow-primary/20'
           : isWinner
@@ -124,16 +126,16 @@ export function MemberCard({
               style={{ width: `${scorePct}%` }}
             />
           </div>
-        ) : (
+        ) : canEdit ? (
           <p className="text-[11px] text-slate-400 mt-0.5">
             {isSelected ? '→ Touchez une case du tableau' : 'Glisser ou toucher'}
           </p>
-        )}
+        ) : null}
       </div>
 
       {isSelected ? (
         <span className="material-symbols-outlined text-primary text-xl shrink-0">check_circle</span>
-      ) : !isLocked ? (
+      ) : !isLocked && canEdit ? (
         <button
           onClick={e => { e.stopPropagation(); onStartEdit(member.id); }}
           className="p-1.5 text-slate-300 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors shrink-0"

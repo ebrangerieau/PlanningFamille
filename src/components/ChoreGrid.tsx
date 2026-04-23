@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Member, Chore, Day } from '../types';
+import type { Member, Chore, Day, Role } from '../types';
 import { COLOR_MAP, TODAY_INDEX } from '../constants';
 
 interface ChoreGridProps {
@@ -9,6 +9,8 @@ interface ChoreGridProps {
   assignments:       Record<string, string>;
   completed:         Record<string, boolean>;
   isLocked:          boolean;
+  role:              Role | null;
+  viewerMemberId:    string | null;
   selectedMemberId:  string | null;
   dragOverKey:       string | null;
   onCellClick:       (choreId: string, dayId: string) => void;
@@ -19,8 +21,11 @@ interface ChoreGridProps {
 
 export function ChoreGrid({
   chores, days, members, assignments, completed, isLocked,
+  role, viewerMemberId,
   selectedMemberId, dragOverKey, onCellClick, onDragOver, onDragLeave, onDrop,
 }: ChoreGridProps) {
+  const isParent = role === 'parent';
+  const isChild  = role === 'child';
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
       <div className="relative">
@@ -87,8 +92,12 @@ export function ChoreGrid({
                     const isToday        = dayIdx === TODAY_INDEX;
                     const isFuture       = dayIdx > TODAY_INDEX;
                     const countsForScore = !isFuture;
-                    const isDragTarget   = dragOverKey === key && !isLocked;
-                    const isAssignTarget = !!selectedMemberId && !isLocked;
+                    const isDragTarget   = isParent && dragOverKey === key && !isLocked;
+                    const isAssignTarget = isParent && !!selectedMemberId && !isLocked;
+                    const canCompleteCell = (isParent && isLocked) ||
+                      (isChild && !!assignedId && assignedId === viewerMemberId);
+                    const canAssignCell   = isParent && !isLocked;
+                    const cellClickable   = countsForScore && (canCompleteCell || canAssignCell);
 
                     return (
                       <td
@@ -109,20 +118,21 @@ export function ChoreGrid({
                             className={[
                               'w-full h-full flex flex-col items-center justify-center rounded-lg sm:rounded-xl',
                               'text-[10px] sm:text-xs font-bold transition-all select-none',
-                              isLocked && countsForScore ? 'cursor-pointer active:scale-95'
-                                : isLocked && isFuture   ? 'cursor-default opacity-55'
-                                : !isLocked              ? 'cursor-pointer active:scale-95' : '',
+                              cellClickable ? 'cursor-pointer active:scale-95'
+                                : isFuture   ? 'cursor-default opacity-55'
+                                : 'cursor-default',
                               isDone && countsForScore
                                 ? 'bg-green-100 text-green-800 ring-2 ring-green-400'
                                 : isDone && isFuture
                                 ? 'bg-slate-100 text-slate-400 ring-2 ring-slate-300'
-                                : selectedMemberId === assignedId && !isLocked
+                                : selectedMemberId === assignedId && canAssignCell
                                 ? `${colors.lightBg} ${colors.text} ring-2 ring-primary/60`
                                 : `${colors.lightBg} ${colors.text}`,
                             ].join(' ')}
                             title={
-                              !isLocked ? 'Toucher pour retirer'
+                              canAssignCell ? 'Toucher pour retirer'
                                 : isFuture ? 'Jour à venir'
+                                : !canCompleteCell ? 'Pas ta tâche'
                                 : isDone   ? 'Marquer comme non fait'
                                 : 'Marquer comme fait !'
                             }
@@ -135,14 +145,14 @@ export function ChoreGrid({
                             ) : (
                               <>
                                 <span>{member.name}</span>
-                                {isLocked && countsForScore && (
+                                {canCompleteCell && countsForScore && (
                                   <span className="text-[8px] opacity-50 mt-0.5 hidden sm:block">Toucher ✓</span>
                                 )}
                               </>
                             )}
                           </div>
                         ) : (
-                          !isLocked && (
+                          canAssignCell && (
                             <div
                               className={[
                                 'w-full h-full border-2 border-dashed rounded-lg sm:rounded-xl',

@@ -1,5 +1,6 @@
 import React from 'react';
-import type { Member } from '../types';
+import type { Member, Role } from '../types';
+import { COLOR_MAP } from '../constants';
 import { getWeekRange } from '../utils/date';
 import { MemberCard } from './MemberCard';
 
@@ -16,6 +17,9 @@ interface SidebarProps {
   scores:            Record<string, number>;
   memberRanks:       Record<string, number>;
   winners:           Member[];
+  role:              Role | null;
+  currentUser:       Member | null;
+  onChangeIdentity:  () => void;
   onLockToggle:      () => void;
   onMemberTap:       (id: string) => void;
   onStartEdit:       (id: string) => void;
@@ -30,9 +34,11 @@ interface SidebarProps {
 export function Sidebar({
   isOpen, onClose, isLocked, members, sortedMembers, selectedMemberId,
   selectedMember, editingMemberId, editName, scores, memberRanks, winners,
+  role, currentUser, onChangeIdentity,
   onLockToggle, onMemberTap, onStartEdit, onRename, onDelete, onAddMember,
   onEditNameChange, onCancelEdit, onDragStart,
 }: SidebarProps) {
+  const isParent = role === 'parent';
   return (
     <aside
       className={[
@@ -64,6 +70,37 @@ export function Sidebar({
           </button>
         </div>
 
+        {/* Identity banner */}
+        <div className="px-4 pt-3 pb-1 shrink-0">
+          <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            {currentUser ? (
+              <div className={`size-7 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 ${COLOR_MAP[currentUser.colorKey].bg}`}>
+                {currentUser.initial}
+              </div>
+            ) : (
+              <div className="size-7 rounded-full flex items-center justify-center bg-slate-300 text-white shrink-0">
+                <span className="material-symbols-outlined text-base">
+                  {role === 'parent' ? 'shield_person' : 'visibility'}
+                </span>
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wider leading-none">Vous êtes</p>
+              <p className="text-sm font-semibold text-slate-800 truncate">
+                {role === 'parent'  && 'Parent'}
+                {role === 'child'   && (currentUser?.name ?? '—')}
+                {role === 'visitor' && 'Visiteur'}
+              </p>
+            </div>
+            <button
+              onClick={onChangeIdentity}
+              className="text-xs font-medium text-primary hover:underline shrink-0"
+            >
+              Changer
+            </button>
+          </div>
+        </div>
+
         {/* Members / Leaderboard */}
         <div className="flex-1 px-4 py-4 overflow-y-auto overscroll-contain">
 
@@ -71,14 +108,14 @@ export function Sidebar({
             <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
               {isLocked ? '🏆 Classement' : '👥 Membres'}
             </h2>
-            {!isLocked && (
+            {!isLocked && isParent && (
               <span className="text-[10px] text-slate-400 italic">
                 {selectedMemberId ? 'Toucher une case →' : 'Glisser ou toucher'}
               </span>
             )}
           </div>
 
-          {!isLocked && (
+          {!isLocked && isParent && (
             <p className={`text-xs mb-3 rounded-lg px-3 py-2 transition-all ${
               selectedMember
                 ? 'bg-primary/10 text-primary font-medium'
@@ -104,6 +141,7 @@ export function Sidebar({
                 winners={winners}
                 membersCount={members.length}
                 editingMemberId={editingMemberId}
+                canEdit={isParent}
                 onTap={onMemberTap}
                 onStartEdit={onStartEdit}
                 onRename={onRename}
@@ -115,7 +153,7 @@ export function Sidebar({
             ))}
           </div>
 
-          {!isLocked && members.length < 8 && !editingMemberId && (
+          {!isLocked && isParent && members.length < 8 && !editingMemberId && (
             <button
               onClick={onAddMember}
               className="w-full mt-2 py-2.5 border-2 border-dashed border-slate-200 hover:border-primary/50 hover:bg-primary/5 text-slate-400 hover:text-primary rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all"
@@ -125,22 +163,24 @@ export function Sidebar({
             </button>
           )}
 
-          <div className="mt-5 pt-4 border-t border-slate-100">
-            <button
-              onClick={onLockToggle}
-              className={[
-                'w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-sm',
-                isLocked
-                  ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  : 'bg-primary text-white shadow-lg shadow-primary/20 hover:bg-primary/90',
-              ].join(' ')}
-            >
-              <span className="material-symbols-outlined text-base">
-                {isLocked ? 'lock_open' : 'lock'}
-              </span>
-              {isLocked ? 'Déverrouiller' : 'Verrouiller le tableau'}
-            </button>
-          </div>
+          {isParent && (
+            <div className="mt-5 pt-4 border-t border-slate-100">
+              <button
+                onClick={onLockToggle}
+                className={[
+                  'w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all text-sm',
+                  isLocked
+                    ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    : 'bg-primary text-white shadow-lg shadow-primary/20 hover:bg-primary/90',
+                ].join(' ')}
+              >
+                <span className="material-symbols-outlined text-base">
+                  {isLocked ? 'lock_open' : 'lock'}
+                </span>
+                {isLocked ? 'Déverrouiller' : 'Verrouiller le tableau'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </aside>

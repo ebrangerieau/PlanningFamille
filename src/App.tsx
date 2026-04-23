@@ -3,18 +3,22 @@ import { CHORES, DAYS, COLOR_MAP } from './constants';
 import { useAppState } from './hooks/useAppState';
 import { usePersistence } from './hooks/usePersistence';
 import { useStats } from './hooks/useStats';
+import { useIdentity } from './hooks/useIdentity';
 import { Sidebar } from './components/Sidebar';
 import { AppHeader } from './components/AppHeader';
 import { ChoreGrid } from './components/ChoreGrid';
 import { StatsPanel } from './components/StatsPanel';
 import { RewardCard } from './components/RewardCard';
+import { IdentityGate } from './components/IdentityGate';
 
 export default function App() {
-  const state = useAppState();
+  const ident = useIdentity();
+  const state = useAppState(ident.identity);
   usePersistence(state);
   const periodData = useStats(state);
 
   const {
+    role, isParent,
     isSidebarOpen, setIsSidebarOpen,
     isLocked, isLoading,
     assignments, completed, members,
@@ -45,6 +49,24 @@ export default function App() {
     );
   }
 
+  // Pas encore d'identité choisie → gate.
+  if (!ident.identity) {
+    return (
+      <IdentityGate
+        members={members}
+        pinConfigured={ident.pinConfigured}
+        onChild={ident.setChild}
+        onVisitor={ident.setVisitor}
+        onVerifyPin={ident.verifyParentPin}
+        onSetupPin={ident.setupParentPin}
+      />
+    );
+  }
+
+  const currentUser = ident.memberId
+    ? members.find(m => m.id === ident.memberId) ?? null
+    : null;
+
   return (
     <div className="bg-background-light text-slate-900 flex min-h-screen font-display overflow-hidden">
 
@@ -69,6 +91,9 @@ export default function App() {
         scores={scores}
         memberRanks={memberRanks}
         winners={winners}
+        role={role}
+        currentUser={currentUser}
+        onChangeIdentity={ident.clearIdentity}
         onLockToggle={handleLockToggle}
         onMemberTap={handleMemberTap}
         onStartEdit={handleStartEdit}
@@ -86,13 +111,14 @@ export default function App() {
           isSidebarOpen={isSidebarOpen}
           onToggleSidebar={() => setIsSidebarOpen(v => !v)}
           isLocked={isLocked}
+          canToggleLock={isParent}
           onLockToggle={handleLockToggle}
         />
 
         <div className="p-3 sm:p-6 flex-1 max-w-[1400px] mx-auto w-full">
 
           {/* Selected-member banner */}
-          {selectedMember && !isLocked && (
+          {selectedMember && !isLocked && isParent && (
             <div className="mb-3 flex items-center gap-3 rounded-xl px-4 py-2.5 border-2 border-primary bg-primary/10">
               <div className={`size-8 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 ${COLOR_MAP[selectedMember.colorKey].bg}`}>
                 {selectedMember.initial}
@@ -118,6 +144,8 @@ export default function App() {
             assignments={assignments}
             completed={completed}
             isLocked={isLocked}
+            role={role}
+            viewerMemberId={ident.memberId}
             selectedMemberId={selectedMemberId}
             dragOverKey={dragOverKey}
             onCellClick={handleCellClick}
@@ -136,6 +164,7 @@ export default function App() {
             />
             <RewardCard
               isLocked={isLocked}
+              canEdit={isParent}
               rewardPeriod={rewardPeriod}
               rewardDescription={rewardDescription}
               isEditingReward={isEditingReward}
