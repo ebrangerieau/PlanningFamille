@@ -7,5 +7,12 @@ coverage/
 .env*
 !.env.example
 
-# Données serveur (générées au runtime)
-data/
+# Données persistées par le backend (JSON de l'état) — jamais commitées
+data/*
+!data/.gitkeep
+
+# Override local optionnel (ne doit JAMAIS arriver sur le VPS)
+docker-compose.override.yml
+
+# Artefacts d'outils IDE / agent
+.claude/

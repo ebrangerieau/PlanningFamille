@@ -49,76 +49,63 @@ npm run preview   # prévisualise le build (port 4173)
 
 ---
 
-## Déploiement Docker (port 3051)
+## Déploiement Docker
 
-### Dockerfile
+Deux configurations Docker Compose cohabitent à la racine du dépôt :
 
-Créez un fichier `Dockerfile` à la racine du projet :
+| Fichier | Cible | Réseau | Exposition |
+|---------|-------|--------|------------|
+| `docker-compose.yml` | VPS + Traefik (production) | `web` (externe) | via Traefik |
+| `docker-compose.dev.yml` | Dev local / test standalone | bridge par défaut | `localhost:3051` |
 
-```dockerfile
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-# --- Image de production ---
-FROM node:20-alpine AS runner
-
-WORKDIR /app
-RUN npm install -g serve
-
-COPY --from=builder /app/dist ./dist
-
-EXPOSE 3051
-CMD ["serve", "-s", "dist", "-l", "3051"]
-```
-
-### Construction et lancement
+### Test local (sans Traefik)
 
 ```bash
-# Construire l'image
-docker build -t planning-famille .
-
-# Lancer le conteneur
-docker run -d \
-  --name planning-famille \
-  -p 3051:3051 \
-  planning-famille
+docker compose -f docker-compose.dev.yml up --build
 ```
 
 L'application est accessible sur [http://localhost:3051](http://localhost:3051).
 
-### Avec Docker Compose
+### Déploiement VPS avec Traefik
 
-Créez un fichier `docker-compose.yml` :
+Prérequis sur le VPS :
+- Traefik tourne et est rattaché au réseau Docker externe `web` (`docker network create web` si besoin).
+- Le certresolver `letsencrypt` est configuré côté Traefik.
 
-```yaml
-services:
-  planning-famille:
-    build: .
-    container_name: planning-famille
-    ports:
-      - "3051:3051"
-    restart: unless-stopped
-```
-
+Première installation :
 ```bash
-docker compose up -d
+git clone <url-du-depot> /docker/planningfamille
+cd /docker/planningfamille
+docker compose up -d --build
 ```
+
+Mises à jour ultérieures :
+```bash
+cd /docker/planningfamille
+./scripts/deploy.sh
+```
+
+Le script `deploy.sh` :
+1. Refuse de continuer s'il y a des modifications locales non commitées (évite d'écraser une config manuelle).
+2. Fait un `git pull --ff-only` (refuse les merges non-linéaires).
+3. Rebuild l'image et relance le conteneur (`docker compose up -d --build`).
+4. Affiche l'état final.
+
+Les données persistées (fichier JSON côté backend) vivent dans `./data/` qui est monté comme volume et survit aux rebuilds.
 
 ### Commandes utiles
 
 ```bash
-# Voir les logs
-docker logs planning-famille
+# Logs
+docker compose logs -f
 
-# Arrêter le conteneur
+# Redémarrer
+docker compose restart
+
+# Arrêter
 docker compose down
 
-# Reconstruire après une modification
+# Reconstruire sans pull
 docker compose up -d --build
 ```
 
