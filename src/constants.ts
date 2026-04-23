@@ -35,3 +35,5 @@ export const COLOR_MAP = {
 };
 
 export const RANK_EMOJI = ['🥇', '🥈', '🥉'];
+
+export const IDENTITY_STORAGE_KEY = 'planning.identity';

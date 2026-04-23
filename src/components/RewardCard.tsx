@@ -3,6 +3,7 @@ import type { Member } from '../types';
 
 interface RewardCardProps {
   isLocked:             boolean;
+  canEdit:              boolean;
   rewardPeriod:         'semaine' | 'mois';
   rewardDescription:    string;
   isEditingReward:      boolean;
@@ -16,7 +17,7 @@ interface RewardCardProps {
 }
 
 export function RewardCard({
-  isLocked, rewardPeriod, rewardDescription, isEditingReward,
+  isLocked, canEdit, rewardPeriod, rewardDescription, isEditingReward,
   winners, maxScore, selectedMember, onEdit, onSave,
   onPeriodChange, onDescriptionChange,
 }: RewardCardProps) {
@@ -85,7 +86,7 @@ export function RewardCard({
                   {rewardDescription}
                 </p>
               </div>
-              {!isLocked && (
+              {!isLocked && canEdit && (
                 <button
                   onClick={onEdit}
                   className="p-2 text-slate-400 hover:text-primary transition-colors rounded-lg hover:bg-primary/10 shrink-0"

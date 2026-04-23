@@ -5,10 +5,11 @@ interface AppHeaderProps {
   isSidebarOpen:    boolean;
   onToggleSidebar:  () => void;
   isLocked:         boolean;
+  canToggleLock:    boolean;
   onLockToggle:     () => void;
 }
 
-export function AppHeader({ isSidebarOpen, onToggleSidebar, isLocked, onLockToggle }: AppHeaderProps) {
+export function AppHeader({ isSidebarOpen, onToggleSidebar, isLocked, canToggleLock, onLockToggle }: AppHeaderProps) {
   return (
     <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-10 gap-2">
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
@@ -39,20 +40,22 @@ export function AppHeader({ isSidebarOpen, onToggleSidebar, isLocked, onLockTogg
             Mode suivi
           </span>
         )}
-        <button
-          onClick={onLockToggle}
-          className={[
-            'px-3 sm:px-5 py-2.5 rounded-xl font-bold flex items-center gap-1.5 transition-all text-sm',
-            isLocked
-              ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              : 'bg-primary text-white shadow-lg shadow-primary/20 hover:bg-primary/90',
-          ].join(' ')}
-        >
-          <span className="material-symbols-outlined text-base">
-            {isLocked ? 'lock_open' : 'lock'}
-          </span>
-          <span className="hidden sm:inline">{isLocked ? 'Modifier' : 'Verrouiller'}</span>
-        </button>
+        {canToggleLock && (
+          <button
+            onClick={onLockToggle}
+            className={[
+              'px-3 sm:px-5 py-2.5 rounded-xl font-bold flex items-center gap-1.5 transition-all text-sm',
+              isLocked
+                ? 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                : 'bg-primary text-white shadow-lg shadow-primary/20 hover:bg-primary/90',
+            ].join(' ')}
+          >
+            <span className="material-symbols-outlined text-base">
+              {isLocked ? 'lock_open' : 'lock'}
+            </span>
+            <span className="hidden sm:inline">{isLocked ? 'Modifier' : 'Verrouiller'}</span>
+          </button>
+        )}
       </div>
     </header>
   );

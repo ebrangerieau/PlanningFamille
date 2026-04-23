@@ -20,7 +20,7 @@ interface PersistenceState {
   rewardDescription:  string;
   setRewardDescription:(v: string) => void;
   isLocked:           boolean;
-  setIsLocked?:       never; // isLocked is set through the load, not directly here
+  setIsLocked:        (v: boolean) => void;
 }
 
 export function usePersistence(state: PersistenceState) {
@@ -33,7 +33,7 @@ export function usePersistence(state: PersistenceState) {
     history, setHistory,
     rewardPeriod, setRewardPeriod,
     rewardDescription, setRewardDescription,
-    isLocked,
+    isLocked, setIsLocked,
   } = state;
 
   const skipNextSave = useRef(true);
@@ -53,6 +53,8 @@ export function usePersistence(state: PersistenceState) {
           setRewardPeriod(data.rewardPeriod);
         if (typeof data.rewardDescription === 'string')
           setRewardDescription(data.rewardDescription);
+        if (typeof data.isLocked === 'boolean')
+          setIsLocked(data.isLocked);
 
         const thisWeek      = getISOWeekId();
         const savedWeek     = typeof data.currentWeek === 'string' ? data.currentWeek : null;
