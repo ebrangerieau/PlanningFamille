@@ -1,0 +1,22 @@
+# Normalisation des fins de ligne — s'applique indépendamment de core.autocrlf
+#
+# Par défaut, Git détecte le type de fichier et normalise les fins de ligne
+# textuelles (LF dans le repo, conversion selon la plateforme au checkout).
+* text=auto
+
+# Fichiers qui DOIVENT rester en LF même checkoutés sur Windows,
+# sinon ils cassent à l'exécution sur Linux.
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+Dockerfile  text eol=lf
+.gitignore  text eol=lf
+.gitattributes text eol=lf
+
+# Binaires : ne pas normaliser
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
