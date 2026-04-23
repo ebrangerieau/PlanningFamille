@@ -23,7 +23,7 @@ export default function App() {
     rewardDescription, setRewardDescription,
     isEditingReward, setIsEditingReward,
     dragOverKey, selectedMemberId, setSelectedMemberId,
-    editingMemberId, editName, setEditName,
+    editingMemberId, setEditingMemberId, editName, setEditName,
     statsPeriod, setStatsPeriod,
     scores, maxScore, winners, sortedMembers, memberRanks, selectedMember,
     handleLockToggle, handleMemberTap,

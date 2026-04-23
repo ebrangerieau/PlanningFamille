@@ -158,7 +158,7 @@ export function useAppState() {
     // UI state
     isSidebarOpen, setIsSidebarOpen,
     // App state
-    isLocked, isLoading, setIsLoading,
+    isLocked, setIsLocked, isLoading, setIsLoading,
     assignments, setAssignments,
     completed, setCompleted,
     members, setMembers,
