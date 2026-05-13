@@ -1,15 +1,21 @@
 /**
  * Serveur MCP pour PlanningFamille "La Tribu"
  *
- * Ajouter dans Claude Desktop (~/Library/Application Support/Claude/claude_desktop_config.json) :
+ * Fonctionne en mode local (fichier) ou distant (API HTTP).
+ * Mode distant recommandé si l'app tourne sur un serveur (ex: planning.bandtrack.fr).
+ *
+ * Config Claude Desktop (%APPDATA%\Claude\claude_desktop_config.json) :
  * {
  *   "mcpServers": {
  *     "planning-famille": {
  *       "command": "node",
- *       "args": ["/chemin/absolu/vers/PlanningFamille/mcp-server.js"]
+ *       "args": ["C:\\chemin\\vers\\PlanningFamille\\mcp-server.js"],
+ *       "env": { "PLANNING_URL": "https://planning.bandtrack.fr" }
  *     }
  *   }
  * }
+ *
+ * Sans PLANNING_URL → lit/écrit data/state.json localement (dev).
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -19,9 +25,10 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { z } from 'zod';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DATA_DIR  = join(__dirname, 'data');
-const DATA_FILE = join(DATA_DIR, 'state.json');
+const __dirname    = dirname(fileURLToPath(import.meta.url));
+const DATA_DIR     = join(__dirname, 'data');
+const DATA_FILE    = join(DATA_DIR, 'state.json');
+const PLANNING_URL = process.env.PLANNING_URL?.replace(/\/$/, '') ?? null;
 
 // ── Constantes du planning ─────────────────────────────────────────────────
 
@@ -49,7 +56,12 @@ const TODAY_ID  = DAYS[TODAY_IDX]?.id ?? 'mon';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function loadState() {
+async function loadState() {
+  if (PLANNING_URL) {
+    const res = await fetch(`${PLANNING_URL}/api/state`);
+    if (!res.ok) throw new Error(`GET /api/state → ${res.status}`);
+    return res.json();
+  }
   if (!existsSync(DATA_FILE)) return {};
   try {
     return JSON.parse(readFileSync(DATA_FILE, 'utf-8'));
@@ -58,7 +70,16 @@ function loadState() {
   }
 }
 
-function saveState(state) {
+async function saveState(state) {
+  if (PLANNING_URL) {
+    const res = await fetch(`${PLANNING_URL}/api/state`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(state),
+    });
+    if (!res.ok) throw new Error(`POST /api/state → ${res.status}`);
+    return;
+  }
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
   writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), 'utf-8');
 }
@@ -102,7 +123,7 @@ server.tool(
   'Retourne un résumé lisible du planning familial de la semaine en cours : tâches assignées, tâches effectuées, scores de chaque membre.',
   {},
   async () => {
-    const state   = loadState();
+    const state   = await loadState();
     const { members = [], assignments = {}, completed = {} } = state;
     const scores  = computeScores(state);
 
@@ -142,7 +163,7 @@ server.tool(
   'Retourne l\'état JSON complet du planning : membres, assignations, tâches effectuées, et historique des semaines passées.',
   {},
   async () => {
-    const state = loadState();
+    const state = await loadState();
     return { content: [{ type: 'text', text: JSON.stringify(state, null, 2) }] };
   }
 );
@@ -158,13 +179,13 @@ server.tool(
     memberId: z.string().describe('ID du membre (utiliser get_state pour voir les IDs des membres)'),
   },
   async ({ choreId, dayId, memberId }) => {
-    const state = loadState();
+    const state = await loadState();
     state.assignments = state.assignments ?? {};
 
     const key = `${choreId}-${dayId}`;
     state.assignments[key] = memberId;
 
-    saveState(state);
+    await saveState(state);
 
     const name  = memberName(state.members, memberId);
     const chore = choreName(choreId);
@@ -190,7 +211,7 @@ server.tool(
     completed: z.boolean().describe('true = effectuée, false = non effectuée'),
   },
   async ({ choreId, dayId, completed }) => {
-    const state = loadState();
+    const state = await loadState();
     state.completed = state.completed ?? {};
 
     const key = `${choreId}-${dayId}`;
@@ -200,7 +221,7 @@ server.tool(
       delete state.completed[key];
     }
 
-    saveState(state);
+    await saveState(state);
 
     const chore  = choreName(choreId);
     const day    = dayLabel(dayId);
@@ -222,7 +243,7 @@ server.tool(
   'Retourne l\'historique des semaines passées avec les scores de chaque membre par semaine.',
   {},
   async () => {
-    const state   = loadState();
+    const state   = await loadState();
     const history = state.history ?? [];
     const members = state.members ?? [];
 
