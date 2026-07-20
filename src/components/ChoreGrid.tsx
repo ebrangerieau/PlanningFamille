@@ -25,7 +25,7 @@ export function ChoreGrid({
   selectedMemberId, dragOverKey, onCellClick, onDragOver, onDragLeave, onDrop,
 }: ChoreGridProps) {
   const isParent = role === 'parent';
-  const isChild  = role === 'child';
+  const isShared = role === 'shared';
   return (
     <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
       <div className="relative">
@@ -94,8 +94,7 @@ export function ChoreGrid({
                     const countsForScore = !isFuture;
                     const isDragTarget   = isParent && dragOverKey === key && !isLocked;
                     const isAssignTarget = isParent && !!selectedMemberId && !isLocked;
-                    const canCompleteCell = (isParent && isLocked) ||
-                      (isChild && !!assignedId && assignedId === viewerMemberId);
+                    const canCompleteCell = (isParent && isLocked) || (isShared && !!assignedId);
                     const canAssignCell   = isParent && !isLocked;
                     const cellClickable   = countsForScore && (canCompleteCell || canAssignCell);
 

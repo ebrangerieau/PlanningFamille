@@ -2,14 +2,17 @@ import React from 'react';
 import { getWeekRange } from '../utils/date';
 
 interface AppHeaderProps {
+  familyName:         string;
   isSidebarOpen:    boolean;
   onToggleSidebar:  () => void;
   isLocked:         boolean;
   canToggleLock:    boolean;
+  canOpenSettings:  boolean;
+  onOpenSettings:   () => void;
   onLockToggle:     () => void;
 }
 
-export function AppHeader({ isSidebarOpen, onToggleSidebar, isLocked, canToggleLock, onLockToggle }: AppHeaderProps) {
+export function AppHeader({ familyName, isSidebarOpen, onToggleSidebar, isLocked, canToggleLock, canOpenSettings, onOpenSettings, onLockToggle }: AppHeaderProps) {
   return (
     <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-10 gap-2">
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
@@ -27,13 +30,18 @@ export function AppHeader({ isSidebarOpen, onToggleSidebar, isLocked, canToggleL
         </span>
         <div className="min-w-0">
           <h2 className="text-base sm:text-xl font-bold leading-tight truncate">
-            Planning Semaine
+            {familyName}
           </h2>
           <p className="text-[10px] sm:text-xs text-slate-400 hidden sm:block">{getWeekRange()}</p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        {canOpenSettings && (
+          <button onClick={onOpenSettings} className="rounded-xl p-2.5 text-slate-500 hover:bg-slate-100" aria-label="Paramètres de la famille">
+            <span className="material-symbols-outlined text-xl">settings</span>
+          </button>
+        )}
         {isLocked && (
           <span className="hidden sm:flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-1.5 rounded-lg text-xs font-medium">
             <span className="material-symbols-outlined text-sm">lock</span>

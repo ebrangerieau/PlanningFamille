@@ -14,6 +14,7 @@ interface MemberCardProps {
   membersCount:        number;
   editingMemberId:     string | null;
   canEdit:             boolean;
+  canConfigure:        boolean;
   onTap:               (id: string) => void;
   onStartEdit:         (id: string) => void;
   onRename:            (id: string) => void;
@@ -25,7 +26,7 @@ interface MemberCardProps {
 
 export function MemberCard({
   member, isLocked, isSelected, isEditing, editName, rank, scores, winners,
-  membersCount, editingMemberId, canEdit, onTap, onStartEdit, onRename, onDelete,
+  membersCount, editingMemberId, canEdit, canConfigure, onTap, onStartEdit, onRename, onDelete,
   onEditNameChange, onCancelEdit, onDragStart,
 }: MemberCardProps) {
   const colors    = COLOR_MAP[member.colorKey];
@@ -135,7 +136,7 @@ export function MemberCard({
 
       {isSelected ? (
         <span className="material-symbols-outlined text-primary text-xl shrink-0">check_circle</span>
-      ) : !isLocked && canEdit ? (
+      ) : !isLocked && canConfigure ? (
         <button
           onClick={e => { e.stopPropagation(); onStartEdit(member.id); }}
           className="p-1.5 text-slate-300 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors shrink-0"

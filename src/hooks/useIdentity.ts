@@ -1,116 +1,80 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { Identity, Role } from '../types';
-import { IDENTITY_STORAGE_KEY } from '../constants';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Identity, SessionInfo } from '../types';
 
-const VISITOR: Identity = { role: 'visitor', memberId: null };
-
-function readStored(): Identity | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(IDENTITY_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<Identity>;
-    if (parsed.role === 'parent' || parsed.role === 'child' || parsed.role === 'visitor') {
-      return {
-        role:     parsed.role,
-        memberId: typeof parsed.memberId === 'string' ? parsed.memberId : null,
-      };
-    }
-  } catch {
-    /* noop */
-  }
-  return null;
-}
-
-function writeStored(identity: Identity | null) {
-  if (typeof window === 'undefined') return;
-  if (!identity) window.localStorage.removeItem(IDENTITY_STORAGE_KEY);
-  else           window.localStorage.setItem(IDENTITY_STORAGE_KEY, JSON.stringify(identity));
-}
+const UNPAIRED: SessionInfo = { paired: false };
 
 export function useIdentity() {
-  // `null` = pas encore choisi → on affiche l'écran d'accueil.
-  const [identity,     setIdentityState] = useState<Identity | null>(() => readStored());
-  const [pinConfigured, setPinConfigured] = useState<boolean | null>(null);
+  const [session, setSession] = useState<SessionInfo>(UNPAIRED);
+  const [isSessionLoading, setIsSessionLoading] = useState(true);
 
-  // Statut serveur : un PIN parent est-il déjà configuré ?
+  const refreshSession = useCallback(async () => {
+    try {
+      const response = await fetch('/api/session');
+      if (!response.ok) throw new Error('Session indisponible');
+      setSession(await response.json() as SessionInfo);
+    } catch {
+      setSession(UNPAIRED);
+    } finally {
+      setIsSessionLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    let cancelled = false;
-    fetch('/api/auth/status')
-      .then(r => r.json())
-      .then((data: { configured?: boolean }) => {
-        if (!cancelled) setPinConfigured(Boolean(data.configured));
-      })
-      .catch(() => { if (!cancelled) setPinConfigured(false); });
-    return () => { cancelled = true; };
+    void refreshSession();
+  }, [refreshSession]);
+
+  const pairDevice = useCallback(async (token: string, label: string) => {
+    const response = await fetch('/api/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, label }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Appairage impossible');
+    window.history.replaceState({}, '', window.location.pathname);
+    await refreshSession();
+  }, [refreshSession]);
+
+  const unpairDevice = useCallback(async () => {
+    await fetch('/api/session/unpair', { method: 'POST' }).catch(() => undefined);
+    setSession(UNPAIRED);
   }, []);
 
-  const setIdentity = useCallback((next: Identity) => {
-    setIdentityState(next);
-    writeStored(next);
+  const verifyParentPin = useCallback(async (pin: string) => {
+    const response = await fetch('/api/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'PIN incorrect');
+    setSession(current => ({ ...current, adminUnlocked: true }));
+    return true;
   }, []);
 
-  const clearIdentity = useCallback(() => {
-    setIdentityState(null);
-    writeStored(null);
+  const lockSettings = useCallback(async () => {
+    await fetch('/api/auth/lock', { method: 'POST' });
+    setSession(current => ({ ...current, adminUnlocked: false }));
   }, []);
 
-  const setVisitor = useCallback(() => setIdentity(VISITOR), [setIdentity]);
-
-  const setChild = useCallback((memberId: string) => {
-    setIdentity({ role: 'child', memberId });
-  }, [setIdentity]);
-
-  const verifyParentPin = useCallback(async (pin: string): Promise<boolean> => {
-    try {
-      const res = await fetch('/api/auth/verify', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ pin }),
-      });
-      if (!res.ok) return false;
-      const data = await res.json();
-      if (data?.ok) {
-        setIdentity({ role: 'parent', memberId: null });
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  }, [setIdentity]);
-
-  const setupParentPin = useCallback(async (pin: string): Promise<boolean> => {
-    try {
-      const res = await fetch('/api/auth/setup', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ pin }),
-      });
-      if (!res.ok) return false;
-      const data = await res.json();
-      if (data?.ok) {
-        setPinConfigured(true);
-        setIdentity({ role: 'parent', memberId: null });
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
-  }, [setIdentity]);
-
-  const role: Role | null = identity?.role ?? null;
+  const identity = useMemo<Identity | null>(() => {
+    if (!session.paired || !session.device) return null;
+    return {
+      role: session.device.role === 'adult' ? 'parent' : 'shared',
+      memberId: null,
+    };
+  }, [session]);
 
   return {
     identity,
-    role,
-    memberId:        identity?.memberId ?? null,
-    pinConfigured,
-    setVisitor,
-    setChild,
+    role: identity?.role ?? null,
+    memberId: null,
+    session,
+    isSessionLoading,
+    pairDevice,
+    unpairDevice,
     verifyParentPin,
-    setupParentPin,
-    clearIdentity,
+    lockSettings,
+    refreshSession,
   };
 }

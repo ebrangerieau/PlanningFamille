@@ -21,6 +21,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3051
+      - PILOT_ADMIN_KEY=${PILOT_ADMIN_KEY:?Définir PILOT_ADMIN_KEY dans le fichier .env du VPS}
     networks:
       - web
     labels:

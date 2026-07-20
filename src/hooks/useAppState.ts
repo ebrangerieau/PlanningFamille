@@ -1,13 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import type { Identity, Member, WeekHistory } from '../types';
-import { COLOR_KEYS, DEFAULT_MEMBERS, DAYS, TODAY_INDEX } from '../constants';
+import type { Chore, Identity, Member, WeekHistory } from '../types';
+import { CHORES, COLOR_KEYS, DEFAULT_MEMBERS, DAYS, TODAY_INDEX } from '../constants';
 import { getISOWeekId } from '../utils/date';
 
 export function useAppState(identity: Identity | null) {
   const role     = identity?.role ?? null;
   const isParent = role === 'parent';
-  const isChild  = role === 'child';
-  const childId  = isChild ? identity?.memberId ?? null : null;
+  const isShared = role === 'shared';
   const [isSidebarOpen,      setIsSidebarOpen]      = useState(
     () => typeof window !== 'undefined' && window.innerWidth >= 768,
   );
@@ -20,6 +19,7 @@ export function useAppState(identity: Identity | null) {
   const [dragOverKey,        setDragOverKey]        = useState<string | null>(null);
   const [selectedMemberId,   setSelectedMemberId]   = useState<string | null>(null);
   const [members,            setMembers]            = useState<Member[]>(DEFAULT_MEMBERS);
+  const [chores,             setChores]             = useState<Chore[]>(CHORES);
   const [editingMemberId,    setEditingMemberId]    = useState<string | null>(null);
   const [editName,           setEditName]           = useState('');
   const [currentWeek,        setCurrentWeek]        = useState(getISOWeekId());
@@ -169,15 +169,15 @@ export function useAppState(identity: Identity | null) {
       return;
     }
 
-    // Enfant : peut cocher uniquement ses propres tâches.
-    if (isChild && childId && assignments[key] === childId) {
+    // Écran familial partagé : peut valider toute tâche assignée.
+    if (isShared) {
       setCompleted(prev => ({ ...prev, [key]: !prev[key] }));
     }
   };
 
   return {
     // Identity (derived)
-    role, isParent, isChild,
+    role, isParent, isShared,
     // UI state
     isSidebarOpen, setIsSidebarOpen,
     // App state
@@ -185,6 +185,7 @@ export function useAppState(identity: Identity | null) {
     assignments, setAssignments,
     completed, setCompleted,
     members, setMembers,
+    chores, setChores,
     currentWeek, setCurrentWeek,
     history, setHistory,
     rewardPeriod, setRewardPeriod,

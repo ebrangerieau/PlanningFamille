@@ -19,6 +19,9 @@ interface SidebarProps {
   winners:           Member[];
   role:              Role | null;
   currentUser:       Member | null;
+  deviceLabel:       string;
+  familyName:        string;
+  onOpenSettings:    () => void;
   onChangeIdentity:  () => void;
   onLockToggle:      () => void;
   onMemberTap:       (id: string) => void;
@@ -34,7 +37,7 @@ interface SidebarProps {
 export function Sidebar({
   isOpen, onClose, isLocked, members, sortedMembers, selectedMemberId,
   selectedMember, editingMemberId, editName, scores, memberRanks, winners,
-  role, currentUser, onChangeIdentity,
+  role, currentUser, deviceLabel, familyName, onOpenSettings, onChangeIdentity,
   onLockToggle, onMemberTap, onStartEdit, onRename, onDelete, onAddMember,
   onEditNameChange, onCancelEdit, onDragStart,
 }: SidebarProps) {
@@ -58,7 +61,7 @@ export function Sidebar({
             <span className="material-symbols-outlined">family_history</span>
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-bold leading-tight">La Tribu</h1>
+            <h1 className="text-lg font-bold leading-tight truncate">{familyName}</h1>
             <p className="text-xs text-slate-500 truncate">{getWeekRange()}</p>
           </div>
           <button
@@ -80,23 +83,22 @@ export function Sidebar({
             ) : (
               <div className="size-7 rounded-full flex items-center justify-center bg-slate-300 text-white shrink-0">
                 <span className="material-symbols-outlined text-base">
-                  {role === 'parent' ? 'shield_person' : 'visibility'}
+                  {role === 'parent' ? 'shield_person' : 'tablet'}
                 </span>
               </div>
             )}
             <div className="flex-1 min-w-0">
               <p className="text-[10px] text-slate-400 uppercase tracking-wider leading-none">Vous êtes</p>
               <p className="text-sm font-semibold text-slate-800 truncate">
-                {role === 'parent'  && 'Parent'}
-                {role === 'child'   && (currentUser?.name ?? '—')}
-                {role === 'visitor' && 'Visiteur'}
+                {role === 'parent' && `Adulte${deviceLabel ? ` — ${deviceLabel}` : ''}`}
+                {role === 'shared' && `Écran familial${deviceLabel ? ` — ${deviceLabel}` : ''}`}
               </p>
             </div>
             <button
               onClick={onChangeIdentity}
               className="text-xs font-medium text-primary hover:underline shrink-0"
             >
-              Changer
+              Dissocier
             </button>
           </div>
         </div>
@@ -142,6 +144,7 @@ export function Sidebar({
                 membersCount={members.length}
                 editingMemberId={editingMemberId}
                 canEdit={isParent}
+                canConfigure={false}
                 onTap={onMemberTap}
                 onStartEdit={onStartEdit}
                 onRename={onRename}
@@ -153,13 +156,10 @@ export function Sidebar({
             ))}
           </div>
 
-          {!isLocked && isParent && members.length < 8 && !editingMemberId && (
-            <button
-              onClick={onAddMember}
-              className="w-full mt-2 py-2.5 border-2 border-dashed border-slate-200 hover:border-primary/50 hover:bg-primary/5 text-slate-400 hover:text-primary rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all"
-            >
-              <span className="material-symbols-outlined text-base">person_add</span>
-              Ajouter un membre
+          {isParent && (
+            <button onClick={onOpenSettings} className="w-full mt-3 py-2.5 border-2 border-dashed border-slate-200 hover:border-primary/50 hover:bg-primary/5 text-slate-500 hover:text-primary rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition-all">
+              <span className="material-symbols-outlined text-base">manage_accounts</span>
+              Gérer les membres et les tâches
             </button>
           )}
 

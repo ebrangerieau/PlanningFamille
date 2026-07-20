@@ -19,3 +19,4 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3051
+      - PILOT_ADMIN_KEY=pilot-local-3051

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { Member, WeekHistory } from '../types';
+import type { Chore, Member, WeekHistory } from '../types';
 import { getISOWeekId } from '../utils/date';
 
 interface PersistenceState {
@@ -7,6 +7,8 @@ interface PersistenceState {
   setIsLoading:       (v: boolean) => void;
   members:            Member[];
   setMembers:         (v: Member[]) => void;
+  chores:             Chore[];
+  setChores:          (v: Chore[]) => void;
   assignments:        Record<string, string>;
   setAssignments:     (v: Record<string, string>) => void;
   completed:          Record<string, boolean>;
@@ -27,6 +29,7 @@ export function usePersistence(state: PersistenceState) {
   const {
     isLoading, setIsLoading,
     members, setMembers,
+    chores, setChores,
     assignments, setAssignments,
     completed, setCompleted,
     currentWeek, setCurrentWeek,
@@ -47,6 +50,8 @@ export function usePersistence(state: PersistenceState) {
       .then((data: Record<string, unknown>) => {
         if (Array.isArray(data.members))
           setMembers(data.members as Member[]);
+        if (Array.isArray(data.chores))
+          setChores(data.chores as Chore[]);
         if (data.assignments && typeof data.assignments === 'object')
           setAssignments(data.assignments as Record<string, string>);
         if (data.rewardPeriod === 'semaine' || data.rewardPeriod === 'mois')
@@ -89,7 +94,7 @@ export function usePersistence(state: PersistenceState) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ members, assignments, completed, currentWeek, history, rewardPeriod, rewardDescription, isLocked }),
     }).catch(() => {});
-  }, [members, assignments, completed, currentWeek, history, rewardPeriod, rewardDescription, isLocked, isLoading]);
+  }, [members, chores, assignments, completed, currentWeek, history, rewardPeriod, rewardDescription, isLocked, isLoading]);
 
   // sendBeacon sur fermeture de page
   useEffect(() => {
